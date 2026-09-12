@@ -9,7 +9,7 @@ from PyQt5.QtCore import Qt, QTimer
 import os
 import sys
 import time
-
+from pathlib import Path
 import robot_pybullet
 import rebotArmCtrl
 
@@ -18,11 +18,12 @@ import pybullet_data
 
 def resource_path(relative_path):
     """获取资源的绝对路径，兼容开发和打包环境"""
-    if hasattr(sys, '_MEIPASS'):   # 判断是否被打包成 exe
-        return os.path.join(sys._MEIPASS, relative_path)
-    # 相对于当前脚本文件的目录
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base_dir, relative_path)
+    if hasattr(sys, '_MEIPASS'):
+        # 打包后：资源在临时解压目录
+        return Path(sys._MEIPASS) / relative_path
+    # 开发环境，相对于当前脚本所在目录
+    base_dir = Path(__file__).resolve().parent.parent
+    return base_dir / relative_path
 
 class rebot_Simulation_App(QMainWindow):
     def __init__(self):
@@ -61,7 +62,7 @@ class rebot_Simulation_App(QMainWindow):
         # 设置窗口
         self.setWindowTitle("rebot Assistant")
         self.setGeometry(100, 100, 800, 600)  # x, y, width, height
-        self.setWindowIcon(QIcon(resource_path("../ico/seeed_studio.ico")))
+        self.setWindowIcon(QIcon(str(resource_path("ico/seeed_studio.ico"))))
 
         # 中央部件和主布局
         central_widget = QWidget()
