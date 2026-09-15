@@ -45,7 +45,12 @@ class ArmControlThread(QThread):
 
     def run(self):
         try:
-            self.ctrl = Controller.from_dm_serial(self.channel, self.baudrate)
+            if "can" in self.channel.lower():
+                self.ctrl = Controller(self.channel)
+            elif "com" in self.channel.lower():
+                self.ctrl = Controller.from_dm_serial(self.channel, self.baudrate)
+            else :
+                return False
             config_path = resource_path("config/rebotDM.yaml")
             with reBotArm_handle(self.ctrl, "rebotDM", config_path=config_path, log_handle=self.log_message) as handle:
                 self.handle = handle 
@@ -103,9 +108,9 @@ class ArmControlThread(QThread):
 
     def _on_set_mode(self, mode):
         self.mode = mode
-        print(self.enable_change_mode)
-        print(mode)
-        print(self.mode)
+        # print(self.enable_change_mode)
+        # print(mode)
+        # print(self.mode)
 
     def stop(self):                 
         self._is_running = False    # 通知 while 循环退出
