@@ -1,21 +1,18 @@
 import sys
 import serial.tools.list_ports
-from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton , QVBoxLayout, QLabel, QSlider
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, 
                              QVBoxLayout, QHBoxLayout, QComboBox, 
-                             QPushButton, QLabel, QTextEdit)  
-from PyQt5.QtGui import QIcon
+                             QPushButton, QLabel, QTextEdit,QLineEdit,
+                             QSlider,QOpenGLWidget,QDesktopWidget)  
+from PyQt5.QtGui import QIcon,QPainter, QImage,QColor,QFont
 from PyQt5.QtCore import Qt, QTimer
-
-
 import os
-import sys
 import time
 from pathlib import Path
 import robot_pybullet
 import rebotArmCtrl
-import can
 import pybullet 
+import can
 import pybullet_data
 import ctypes
 from ctypes import wintypes
@@ -76,6 +73,7 @@ class rebot_Simulation_App(QMainWindow):
         # 设置窗口
         self.setWindowTitle("rebot Assistant")
         self.setGeometry(100, 100, 800, 600)  # x, y, width, height
+        self.center_on_screen()
         self.setWindowIcon(QIcon(str(resource_path("ico/seeed_studio.ico"))))
 
         # 中央部件和主布局
@@ -113,7 +111,7 @@ class rebot_Simulation_App(QMainWindow):
 
         # 日志区
         self.log_area = QTextEdit()
-        self.log_area.setLayout(QVBoxLayout())
+        self.log_area.Layout = QVBoxLayout()
         self.log_area.setPlaceholderText("日志信息...")
         self.log_area.setFixedHeight(100)  
         self.main_layout.addWidget(self.log_area)
@@ -204,12 +202,18 @@ class rebot_Simulation_App(QMainWindow):
         # 渲染区
         # bullet 初始化
         self.physics_client = pybullet.connect(pybullet.GUI) # 无头模式 pybullet.DIRECT
-        self.hide_pybullet_window()  
+        for _ in range(50):
+            hwnd = self.find_pybullet_window()
+            if hwnd:
+                ctypes.windll.user32.ShowWindow(hwnd, 0)
+                break
+            time.sleep(0.001)  # 最多等 50ms
+        # self.hide_pybullet_window()  
 
         pybullet.setAdditionalSearchPath(pybullet_data.getDataPath())
         pybullet.setPhysicsEngineParameter(
-            fixedTimeStep=1/500,      
-            numSubSteps=5
+            fixedTimeStep=1/1000,      
+            numSubSteps=20
         )
         # 加载地面
         plane_id = pybullet.loadURDF("plane.urdf")
@@ -230,6 +234,7 @@ class rebot_Simulation_App(QMainWindow):
         pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 5, 6, enableCollision=0)
 
         self.show_rebot = robot_pybullet.RobotRenderer(self.physics_client)
+
         self.rebot_main_layout.addWidget(self.show_rebot , stretch=4)
         # 定时更新渲染
         self.sim_timer = QTimer(self)
@@ -252,15 +257,17 @@ class rebot_Simulation_App(QMainWindow):
         else:
             self.log_area.append("扫描完成,未发现设备。")
         if platform == "windows":
-            for serial_ports in self.serial_ports:
-                self.log_area.append(f"设备: {serial_ports.device}, 描述: {serial_ports.description}")
-                self.combo.addItems([f"{serial_ports.device}"])
+            if self.serial_ports :
+                for serial_ports in self.serial_ports:
+                    self.log_area.append(f"设备: {serial_ports.device}, 描述: {serial_ports.description}")
+                    self.combo.addItems([f"{serial_ports.device}"])
 
-            for pcan_ports in self.pcan_ports:
-                pcan_name = pcan_ports['channel']
-                map_name = self.pcan_map[f"{pcan_name}"]
-                self.log_area.append(f"设备:{map_name}, 描述: {pcan_name}")
-                self.combo.addItems([f"{map_name}"])            
+            if self.pcan_ports :
+                for pcan_ports in self.pcan_ports:
+                    pcan_name = pcan_ports['channel']
+                    map_name = self.pcan_map[f"{pcan_name}"]
+                    self.log_area.append(f"设备:{map_name}, 描述: {pcan_name}")
+                    self.combo.addItems([f"{map_name}"])              
         
         self.status_label.setText("扫描完成")
 
@@ -321,7 +328,11 @@ class rebot_Simulation_App(QMainWindow):
     # 获取可用的串口列表
     def get_ports(self):
         self.serial_ports = serial.tools.list_ports.comports()
-        self.pcan_ports = can.detect_available_configs(interfaces='pcan')
+        try:
+            self.pcan_ports = can.detect_available_configs(interfaces='pcan')
+        except Exception as e:
+            print(f"PCAN 扫描被策略拦截，跳过: {e}")
+            self.pcan_ports = []
         if self.serial_ports or self.pcan_ports:    
             return True
         else:
@@ -505,13 +516,36 @@ class rebot_Simulation_App(QMainWindow):
     def hide_pybullet_window(self):
         hwnd = self.find_pybullet_window()
         if not hwnd:
+            print("no hwnd")
             return
         if hwnd:
             ctypes.windll.user32.ShowWindow(hwnd, 0)   # 0 隐藏窗口，保留 gpu 加速
 
-
+    def center_on_screen(self):
+        screen = QDesktopWidget().availableGeometry()
+        x = (screen.width() - 800) // 2
+        y = (screen.height() - 600) // 2
+        self.move(x, y)
+from PyQt5.QtWidgets import QSplashScreen
+from PyQt5.QtGui import QPixmap
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+
+    try:
+        import pyi_splash
+        pyi_splash.close()
+    except ImportError:
+        pass
+
+    splash = QSplashScreen(QPixmap(str(resource_path("ico/splash.png"))))
+    splash.setWindowFlags(
+    Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.SplashScreen
+    )
+    splash.show()
+
+    app.processEvents()
+
     window = rebot_Simulation_App()
+    splash.close()
     window.show()
     sys.exit(app.exec_())
