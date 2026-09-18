@@ -22,10 +22,14 @@ from robot_opengl import GLURDFRenderer
 
 platform = "windows" #linux or windows
 sim_engine = "pybullet"
-urdf = Path(__file__).resolve().parent.parent / \
-        "urdf/reBot-DevArm_fixend_description/urdf/reBot-DevArm_fixend.urdf"
-# urdf = Path(__file__).resolve().parent.parent / \
-#         "urdf/00-arm-rs_asm-v3/urdf/00-arm-rs_asm-v3.urdf"
+rebot_ver = "DM"
+if rebot_ver == "DM":
+    urdf = Path(__file__).resolve().parent.parent / \
+            "urdf/reBot-DevArm_fixend_description/urdf/reBot-DevArm_fixend.urdf"
+elif rebot_ver == "RS":
+    urdf = Path(__file__).resolve().parent.parent / \
+            "urdf/00-arm-rs_asm-v3/urdf/00-arm-rs_asm-v3.urdf"
+    
 def resource_path(relative_path):
     """获取资源的绝对路径，兼容开发和打包环境"""
     if hasattr(sys, '_MEIPASS'):
@@ -149,10 +153,16 @@ class rebot_Simulation_App(QMainWindow):
         self.link_value = [0]*6
         self.joint_angles = [0]*6
         self.link_names = ["link1","link2","link3","link4","link5","link6"] #,"end_link"]
-        self.slider_min = [-2.6,-3.8,-3.8, -1.56,-1.56,-3.14]
-        self.slider_max = [2.6,0,0, 1.56,1.56,3.14 ]
-        self.robot_id_map = {-1:"base_link", 0:"link1",1:"link2",2:"link3",3:"link4",
+        if rebot_ver == "DM":
+            self.slider_min = [-2.6,-3.8,-3.8, -1.56,-1.56,-3.14]
+            self.slider_max = [2.6,0,0, 1.56,1.56,3.14 ]
+            self.robot_id_map = {-1:"base_link", 0:"link1",1:"link2",2:"link3",3:"link4",
                              4:"link5",5:"link6",6:"end_link"}
+        elif rebot_ver == "RS":
+            self.slider_min = [-2.6,0,0, -1.56,-1.56,-3.14]
+            self.slider_max = [2.6,3.8,3.8, 1.56,1.56,3.14 ]
+            self.robot_id_map = {-1:"base_link", 0:"link1",1:"link2",2:"link3",3:"link4",
+                             4:"link5",5:"link6",6:"end_link",7:"gripper_left",8:"gripper_right"}
         for i in range(6):
             # 每一行都是水平布局
             row = QHBoxLayout()
@@ -202,7 +212,7 @@ class rebot_Simulation_App(QMainWindow):
             # 加载地面
             plane_id = pybullet.loadURDF("plane.urdf")
             pybullet.changeVisualShape(plane_id, -1, rgbaColor=[0.8, 0.9, 1.0, 1.0]) #-1 表示修改该物体整体
-            self.robot_id =  pybullet.loadURDF(str(rebotArmCtrl.rebotArm_DM_model_path), useFixedBase=True,
+            self.robot_id =  pybullet.loadURDF(str(urdf), useFixedBase=True,
                                                 flags = pybullet.URDF_USE_SELF_COLLISION)
             for i in range(6) :
                 pybullet.changeVisualShape(self.robot_id,i, rgbaColor=[1, 1, 1, 1]) 
@@ -210,12 +220,14 @@ class rebot_Simulation_App(QMainWindow):
 
             # 过滤y碰撞组
             self.colliding = set()
-            pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 3, 5, enableCollision=0)
+            pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 2, 4, enableCollision=0)
             pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 1, 2, enableCollision=0)
             pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 2, 3, enableCollision=0)
             pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 3, 4, enableCollision=0)
             pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 4, 5, enableCollision=0)
             pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 5, 6, enableCollision=0)
+            if rebot_ver == "RS":
+                pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 7, 8, enableCollision=0)
             self.show_rebot = GLURDFRenderer(str(urdf))
 
             self.rebot_main_layout.addWidget(self.show_rebot , stretch=4)

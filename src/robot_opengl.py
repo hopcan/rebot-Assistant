@@ -91,7 +91,7 @@ class LinkNode:
         "name", "joint_origin", "joint_axis", "joint_limit",
         "visual_mesh", "visual_origin", "color",
         "vertices", "normals", "n_verts",
-        "_vert_data", "_norm_data",
+        "_vert_data", "_norm_data", "_vert_colors", "_col_data", "_visuals",
         "parent", "children", "is_fixed",
     )
 
@@ -130,20 +130,33 @@ def parse_urdf(urdf_path: str) -> LinkNode:
         if elem.tag == "link":
             name = elem.get("name")
             node = LinkNode(name)
-            vis = elem.find("visual")
-            if vis is not None:
+            # 收集所有 <visual> 元素（一个 link 可能有多个 visual）
+            visuals = elem.findall("visual")
+            if not visuals:
+                links[name] = node
+                continue
+            # 用第一个 visual 的颜色作为 link 默认色
+            first_mat = visuals[0].find("material")
+            if first_mat is not None:
+                col = first_mat.find("color")
+                if col is not None:
+                    node.color = [float(v) for v in col.get("rgba", "0.7 0.7 0.7 1").split()]
+            node._visuals = []  # 存储 (mesh_path, xyz, rpy, color)
+            for vis in visuals:
                 xyz, rpy = _parse_origin(vis.find("origin"))
-                node.visual_origin = _origin_to_mat(xyz, rpy)
                 geom = vis.find("geometry")
                 if geom is not None:
                     mesh = geom.find("mesh")
                     if mesh is not None:
-                        node.visual_mesh = _resolve_mesh(mesh.get("filename"))
-                mat = vis.find("material")
-                if mat is not None:
-                    col = mat.find("color")
-                    if col is not None:
-                        node.color = [float(v) for v in col.get("rgba", "0.7 0.7 0.7 1").split()]
+                        mp = _resolve_mesh(mesh.get("filename"))
+                        vis_color = node.color  # 默认用 link 颜色
+                        mat = vis.find("material")
+                        if mat is not None:
+                            col = mat.find("color")
+                            if col is not None:
+                                vis_color = [float(v) for v in col.get("rgba", "0.7 0.7 0.7 1").split()]
+                        if mp:
+                            node._visuals.append((mp, xyz, rpy, vis_color))
             links[name] = node
 
     # 处理 joint
@@ -177,14 +190,49 @@ def parse_urdf(urdf_path: str) -> LinkNode:
 
     root = next((n for n in links.values() if n.parent is None), list(links.values())[0])
 
-    # 加载 STL
+    # 加载 STL（支持多 visual 合并）
     for node in links.values():
-        if node.visual_mesh and Path(node.visual_mesh).exists():
+        visuals = getattr(node, '_visuals', None)
+        if not visuals:
+            # 兼容旧的单 visual 格式
+            if node.visual_mesh and Path(node.visual_mesh).exists():
+                try:
+                    node.vertices, node.normals = parse_binary_stl(node.visual_mesh)
+                    node.n_verts = len(node.vertices)
+                except Exception:
+                    node.vertices = node.normals = node.n_verts = None
+            continue
+        # 合并多个 visual 的 mesh
+        all_verts = []
+        all_norms = []
+        all_colors = []
+        for mesh_path, xyz, rpy, vis_color in visuals:
+            if not Path(mesh_path).exists():
+                continue
             try:
-                node.vertices, node.normals = parse_binary_stl(node.visual_mesh)
-                node.n_verts = len(node.vertices)
+                v, n = parse_binary_stl(mesh_path)
+                T = _origin_to_mat(xyz, rpy)
+                R = T[:3, :3]
+                t = T[:3, 3]
+                # 旋转顶点
+                v = (R @ v.T).T + t
+                # 旋转法线
+                n = (R @ n.T).T
+                all_verts.append(v)
+                all_norms.append(n)
+                # 为每个顶点记录颜色
+                all_colors.append(np.tile(vis_color, (len(v), 1)))
             except Exception:
-                node.vertices = node.normals = node.n_verts = None
+                pass
+        if all_verts:
+            node.vertices = np.vstack(all_verts).astype(np.float32)
+            node.normals = np.vstack(all_norms).astype(np.float32)
+            node.n_verts = len(node.vertices)
+            # 将颜色数据也存储到节点上
+            node._vert_colors = np.vstack(all_colors).astype(np.float32)
+            node.visual_origin = np.eye(4)  # 已经烘焙到顶点里了
+        else:
+            node.vertices = node.normals = node.n_verts = node._vert_colors = None
 
     return root
 
@@ -211,6 +259,10 @@ def _prepare_data(node):
     if node.vertices is not None and node.n_verts > 0:
         node._vert_data = np.ascontiguousarray(node.vertices, dtype=np.float32)
         node._norm_data = np.ascontiguousarray(node.normals, dtype=np.float32)
+        if hasattr(node, '_vert_colors') and node._vert_colors is not None:
+            node._col_data = np.ascontiguousarray(node._vert_colors, dtype=np.float32)
+        else:
+            node._col_data = None
     else:
         node._vert_data = node._norm_data = None
     for child in node.children:
@@ -257,6 +309,7 @@ class GLURDFRenderer(QOpenGLWidget):
         node = _find(self.root, link_name)
         if node:
             node.color = list(rgba)
+            node._col_data = None  # 清掉多 visual 的逐顶点色，用单色
             self.update()
 
     def set_link_colors(self, mapping: dict):
@@ -338,12 +391,20 @@ class GLURDFRenderer(QOpenGLWidget):
             glMultMatrixf(T.T.flatten())
             glMultMatrixf(node.visual_origin.T.flatten())
 
-            r, g, b, a = node.color
-            glColor4f(r, g, b, a)
-
             glVertexPointerf(node._vert_data)
             glNormalPointerf(node._norm_data)
+
+            if node._col_data is not None:
+                glEnableClientState(GL_COLOR_ARRAY)
+                glColorPointerf(node._col_data)
+            else:
+                r, g, b, a = node.color
+                glColor4f(r, g, b, a)
+
             glDrawArrays(GL_TRIANGLES, 0, node.n_verts)
+
+            if node._col_data is not None:
+                glDisableClientState(GL_COLOR_ARRAY)
 
             glPopMatrix()
 

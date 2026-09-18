@@ -118,27 +118,13 @@
         iyz="0.00000128"
         izz="0.01281387" />
     </inertial>
-    <!-- <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="meshes/link2.STL" />
-      </geometry>
-      <material
-        name="">
-        <color
-          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
-      </material>
-    </visual> -->
     <visual>
       <origin
         xyz="0 0 0"
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="meshes/motor_2_3.STL" />
+          filename="meshes/link2.STL" />
       </geometry>
       <material
         name="">
@@ -232,69 +218,13 @@
         iyz="0.00000006"
         izz="0.00648221" />
     </inertial>
-    <!--  <visual>
+     <visual>
       <origin
         xyz="0 0 0"
         rpy="0 0 0" />
       <geometry>
         <mesh
           filename="meshes/link3.STL" />
-      </geometry>
-      <material
-        name="">
-        <color
-          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
-      </material>
-    </visual> -->
-    <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="meshes/cnc3.STL" />
-      </geometry>
-      <material
-        name="">
-        <color
-          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
-      </material>
-    </visual>
-    <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="meshes/motor_4.STL" />
-      </geometry>
-      <material
-        name="">
-        <color
-          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
-      </material>
-    </visual>
-    <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="meshes/pla3_black.STL" />
-      </geometry>
-      <material
-        name="">
-        <color
-          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
-      </material>
-    </visual>
-    <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="meshes/pla3_green.STL" />
       </geometry>
       <material
         name="">
@@ -346,41 +276,13 @@
         iyz="-0.0"
         izz="0.00066742" />
     </inertial>
-    <!-- <visual>
+    <visual>
       <origin
         xyz="0 0 0"
         rpy="0 0 0" />
       <geometry>
         <mesh
           filename="meshes/link4.STL" />
-      </geometry>
-      <material
-        name="">
-        <color
-          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
-      </material>
-    </visual> -->
-    <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="meshes/motor_5.STL" />
-      </geometry>
-      <material
-        name="">
-        <color
-          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
-      </material>
-    </visual>
-    <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="meshes/cnc4.STL" />
       </geometry>
       <material
         name="">
@@ -432,41 +334,13 @@
         iyz="-1.32742144977931E-08"
         izz="5.29920095811017E-05" />
     </inertial>
-    <!-- <visual>
+    <visual>
       <origin
         xyz="0 0 0"
         rpy="0 0 0" />
       <geometry>
         <mesh
           filename="meshes/link5.STL" />
-      </geometry>
-      <material
-        name="">
-        <color
-          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
-      </material>
-    </visual> -->
-    <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="meshes/motor_6.STL" />
-      </geometry>
-      <material
-        name="">
-        <color
-          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
-      </material>
-    </visual>
-    <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="meshes/cnc5.STL" />
       </geometry>
       <material
         name="">
@@ -590,41 +464,13 @@
         iyz="0.00000348"
         izz="0.00045353" />
     </inertial>
-    <!-- <visual>
+    <visual>
       <origin
         xyz="0 0 0"
         rpy="0 0 0" />
       <geometry>
         <mesh
           filename="meshes/gripper_end.STL" />
-      </geometry>
-      <material
-        name="">
-        <color
-          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
-      </material>
-    </visual> -->
-    <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="meshes/pla7_green.STL" />
-      </geometry>
-      <material
-        name="">
-        <color
-          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
-      </material>
-    </visual>
-    <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="meshes/cnc7.STL" />
       </geometry>
       <material
         name="">
@@ -685,41 +531,13 @@
         iyz="0"
         izz="9.30779991911125E-06" />
     </inertial>
-    <!-- <visual>
+    <visual>
       <origin
         xyz="0 0 0"
         rpy="0 0 0" />
       <geometry>
         <mesh
           filename="meshes/gripper_left.STL" />
-      </geometry>
-      <material
-        name="">
-        <color
-          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
-      </material>
-    </visual> -->
-    <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="meshes/pla_left.STL" />
-      </geometry>
-      <material
-        name="">
-        <color
-          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
-      </material>
-    </visual>
-    <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="meshes/cnc_left.STL" />
       </geometry>
       <material
         name="">
@@ -771,41 +589,13 @@
         iyz="0"
         izz="9.30779991911125E-06" />
     </inertial>
-    <!-- <visual>
+    <visual>
       <origin
         xyz="0 0 0"
         rpy="0 0 0" />
       <geometry>
         <mesh
           filename="meshes/gripper_right.STL" />
-      </geometry>
-      <material
-        name="">
-        <color
-          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
-      </material>
-    </visual> -->
-    <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="meshes/pla_right.STL" />
-      </geometry>
-      <material
-        name="">
-        <color
-          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
-      </material>
-    </visual>
-    <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="meshes/cnc_right.STL" />
       </geometry>
       <material
         name="">
