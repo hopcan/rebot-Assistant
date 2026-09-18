@@ -16,8 +16,16 @@ import can
 import pybullet_data
 import ctypes
 from ctypes import wintypes
-platform = "windows" #linux or windows
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from robot_opengl import GLURDFRenderer
+
+platform = "windows" #linux or windows
+sim_engine = "pybullet"
+urdf = Path(__file__).resolve().parent.parent / \
+        "urdf/reBot-DevArm_fixend_description/urdf/reBot-DevArm_fixend.urdf"
+# urdf = Path(__file__).resolve().parent.parent / \
+#         "urdf/00-arm-rs_asm-v3/urdf/00-arm-rs_asm-v3.urdf"
 def resource_path(relative_path):
     """获取资源的绝对路径，兼容开发和打包环境"""
     if hasattr(sys, '_MEIPASS'):
@@ -30,34 +38,6 @@ def resource_path(relative_path):
 class rebot_Simulation_App(QMainWindow):
     def __init__(self):
         super().__init__()
-
-        # # bullet 初始化
-        # self.physics_client = pybullet.connect(pybullet.GUI) # 无头模式 pybullet.DIRECT
-        # self.hide_pybullet_window()  
-
-        # pybullet.setAdditionalSearchPath(pybullet_data.getDataPath())
-        # pybullet.setPhysicsEngineParameter(
-        #     fixedTimeStep=1/500,      
-        #     numSubSteps=5
-        # )
-        # # 加载地面
-        # plane_id = pybullet.loadURDF("plane.urdf")
-        # pybullet.changeVisualShape(plane_id, -1, rgbaColor=[0.8, 0.9, 1.0, 1.0]) #-1 表示修改该物体整体
-        # self.robot_id =  pybullet.loadURDF(str(rebotArmCtrl.rebotArm_DM_model_path), useFixedBase=True,
-        #                                    flags = pybullet.URDF_USE_SELF_COLLISION)
-        # for i in range(6) :
-        #     pybullet.changeVisualShape(self.robot_id,i, rgbaColor=[1, 1, 1, 1]) 
-        # pybullet.changeVisualShape(self.robot_id,-1, rgbaColor=[1, 1, 1, 1]) 
-
-        # # 过滤y碰撞组
-        # self.colliding = set()
-        # pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 3, 5, enableCollision=0)
-        # pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 1, 2, enableCollision=0)
-        # pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 2, 3, enableCollision=0)
-        # pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 3, 4, enableCollision=0)
-        # pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 4, 5, enableCollision=0)
-        # pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 5, 6, enableCollision=0)
-
         # 通信接口
         self.serial_ports = None
         self.pcan_ports = None
@@ -101,6 +81,13 @@ class rebot_Simulation_App(QMainWindow):
         self.btn_connect.setStyleSheet("background-color: #4CAF50; color: white;")  # 绿色
         self.btn_connect.clicked.connect(self.on_connect)
         top_layout.addWidget(self.btn_connect)
+
+        # 碰撞显示按钮
+        self.show_collision_on = False # 默认不显示
+        self.show_collision = QPushButton("开启碰撞显示")
+        self.show_collision.setStyleSheet("background-color: #4CAF50; color: white;")  # 绿色
+        self.show_collision.clicked.connect(self.on_show_collision)
+        top_layout.addWidget(self.show_collision)
 
         # 弹性空间，将控件推至左上角
         top_layout.addStretch()  # 这会让下拉列表和按钮靠左
@@ -160,9 +147,12 @@ class rebot_Simulation_App(QMainWindow):
         self.labels = []
         self.values = []
         self.link_value = [0]*6
+        self.joint_angles = [0]*6
         self.link_names = ["link1","link2","link3","link4","link5","link6"] #,"end_link"]
         self.slider_min = [-2.6,-3.8,-3.8, -1.56,-1.56,-3.14]
         self.slider_max = [2.6,0,0, 1.56,1.56,3.14 ]
+        self.robot_id_map = {-1:"base_link", 0:"link1",1:"link2",2:"link3",3:"link4",
+                             4:"link5",5:"link6",6:"end_link"}
         for i in range(6):
             # 每一行都是水平布局
             row = QHBoxLayout()
@@ -201,49 +191,40 @@ class rebot_Simulation_App(QMainWindow):
 
         # 渲染区
         # bullet 初始化
-        self.physics_client = pybullet.connect(pybullet.GUI) # 无头模式 pybullet.DIRECT
-        for _ in range(50):
-            hwnd = self.find_pybullet_window()
-            if hwnd:
-                ctypes.windll.user32.ShowWindow(hwnd, 0)
-                break
-            time.sleep(0.001)  # 最多等 50ms
-        # self.hide_pybullet_window()  
+        if sim_engine == "pybullet":
+            self.physics_client = pybullet.connect(pybullet.DIRECT) # 无头模式 pybullet.DIRECT
 
-        pybullet.setAdditionalSearchPath(pybullet_data.getDataPath())
-        pybullet.setPhysicsEngineParameter(
-            fixedTimeStep=1/1000,      
-            numSubSteps=20
-        )
-        # 加载地面
-        plane_id = pybullet.loadURDF("plane.urdf")
-        pybullet.changeVisualShape(plane_id, -1, rgbaColor=[0.8, 0.9, 1.0, 1.0]) #-1 表示修改该物体整体
-        self.robot_id =  pybullet.loadURDF(str(rebotArmCtrl.rebotArm_DM_model_path), useFixedBase=True,
-                                            flags = pybullet.URDF_USE_SELF_COLLISION)
-        for i in range(6) :
-            pybullet.changeVisualShape(self.robot_id,i, rgbaColor=[1, 1, 1, 1]) 
-        pybullet.changeVisualShape(self.robot_id,-1, rgbaColor=[1, 1, 1, 1]) 
+            pybullet.setAdditionalSearchPath(pybullet_data.getDataPath())
+            pybullet.setPhysicsEngineParameter(
+                fixedTimeStep=1/1000,      
+                numSubSteps=20
+            )
+            # 加载地面
+            plane_id = pybullet.loadURDF("plane.urdf")
+            pybullet.changeVisualShape(plane_id, -1, rgbaColor=[0.8, 0.9, 1.0, 1.0]) #-1 表示修改该物体整体
+            self.robot_id =  pybullet.loadURDF(str(rebotArmCtrl.rebotArm_DM_model_path), useFixedBase=True,
+                                                flags = pybullet.URDF_USE_SELF_COLLISION)
+            for i in range(6) :
+                pybullet.changeVisualShape(self.robot_id,i, rgbaColor=[1, 1, 1, 1]) 
+            pybullet.changeVisualShape(self.robot_id,-1, rgbaColor=[1, 1, 1, 1]) 
 
-        # 过滤y碰撞组
-        self.colliding = set()
-        pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 3, 5, enableCollision=0)
-        pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 1, 2, enableCollision=0)
-        pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 2, 3, enableCollision=0)
-        pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 3, 4, enableCollision=0)
-        pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 4, 5, enableCollision=0)
-        pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 5, 6, enableCollision=0)
+            # 过滤y碰撞组
+            self.colliding = set()
+            pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 3, 5, enableCollision=0)
+            pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 1, 2, enableCollision=0)
+            pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 2, 3, enableCollision=0)
+            pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 3, 4, enableCollision=0)
+            pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 4, 5, enableCollision=0)
+            pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 5, 6, enableCollision=0)
+            self.show_rebot = GLURDFRenderer(str(urdf))
 
-        self.show_rebot = robot_pybullet.RobotRenderer(self.physics_client)
+            self.rebot_main_layout.addWidget(self.show_rebot , stretch=4)
 
-        self.rebot_main_layout.addWidget(self.show_rebot , stretch=4)
-        # 定时更新渲染
-        self.sim_timer = QTimer(self)
-        self.sim_timer.timeout.connect(self.update_sim)
-        self.sim_timer.start(5)   
+            # 定时更新渲染
+            self.sim_timer = QTimer(self)
+            self.sim_timer.timeout.connect(self.update_sim)
+            self.sim_timer.start(5)   
 
-        self.show_timer = QTimer(self)
-        self.show_timer.timeout.connect(self.update_show)
-        self.show_timer.start(5)   
         
 
 
@@ -302,6 +283,17 @@ class rebot_Simulation_App(QMainWindow):
                     time.sleep(0.1)
                 elif self.arm_thread and self.arm_mode_is_running == True :
                     self.log_area.append("请先关闭模式。")
+
+    def on_show_collision(self):
+        if self.show_collision.text() == "开启碰撞显示":
+            self.show_collision_on = True
+            self.show_collision.setText("关闭碰撞显示")
+            self.show_collision.setStyleSheet("background-color: #f44336; color: white;")  # 红色
+        elif self.show_collision.text() == "关闭碰撞显示":
+            self.show_collision_on = False
+            self.show_collision.setText("开启碰撞显示")
+            self.show_collision.setStyleSheet("background-color: #4CAF50; color: white;")  # 绿色
+
 
     # 重置仿真机械臂
     def reset_arm(self):
@@ -415,12 +407,6 @@ class rebot_Simulation_App(QMainWindow):
         self.link_value[idx] = rad
 
     def on_slider_release(self,idx):
-        # pybullet.resetJointState(
-        #     bodyUniqueId = self.robot_id,
-        #     jointIndex = idx,
-        #     targetValue = self.link_value[idx],             # 目标角度（弧度）
-        #     targetVelocity = 0.0                 # 目标速度
-        # )
         pybullet.setJointMotorControl2(
             bodyUniqueId = self.robot_id,
             jointIndex = idx,
@@ -453,12 +439,6 @@ class rebot_Simulation_App(QMainWindow):
 
     def on_pos_received(self,pos):
         for i in range(len(pos)):
-        #     pybullet.resetJointState(
-        #     bodyUniqueId = self.robot_id,
-        #     jointIndex = i,
-        #     targetValue = pos[i],             # 目标角度（弧度）
-        #     targetVelocity = 0.0                 # 目标速度
-        # )
             pybullet.setJointMotorControl2(
                 bodyUniqueId = self.robot_id,
                 jointIndex = i,
@@ -470,18 +450,25 @@ class rebot_Simulation_App(QMainWindow):
             )
             pos_int = int(pos[i]*100)
             self.sliders[i].setValue(pos_int)
-            # print(joint_pos)
 
     def update_sim(self):
         pybullet.stepSimulation()
+        num_joints = pybullet.getNumJoints(self.robot_id)
+        joint_states = pybullet.getJointStates(self.robot_id, range(num_joints))
+        self.joint_angles = [state[0] for state in joint_states]  # 所有关节的角度（弧度）列表
+        self.show_rebot.set_joint_positions(self.joint_angles)
+        if self.show_collision_on:
+            self.update_show_collision()
+        else:
+            for link_name in self.robot_id_map.values():
+                self.show_rebot.set_link_color(link_name, (0.627, 0.627, 0.627, 1))   
 
-    
-    def update_show(self):
-        # if self.show_rebot.isVisible():
-            # self.show_rebot.update()
+
+    def update_show_collision(self):
         contacts = pybullet.getContactPoints(bodyA=self.robot_id, bodyB=self.robot_id)
         for i in range(pybullet.getNumJoints(self.robot_id)):
-            pybullet.changeVisualShape(self.robot_id, i, rgbaColor=[1, 1, 1, 1])
+            self.show_rebot.set_link_color(self.robot_id_map[i], (0.627, 0.627, 0.627, 1))    
+
         if contacts:
             self.colliding.clear()
             for c in contacts:
@@ -490,36 +477,9 @@ class rebot_Simulation_App(QMainWindow):
             for i in range(pybullet.getNumJoints(self.robot_id)):
                 if i in self.colliding:
                     # 碰撞的连杆红色
-                    pybullet.changeVisualShape(self.robot_id, i, rgbaColor=[1, 0, 0, 1])
+                    self.show_rebot.set_link_color(self.robot_id_map[i], (1, 0, 0, 1))    # 红色
 
 
-    def find_pybullet_window(self):
-        result = [0]
-        def callback(hwnd, lparam):
-            length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
-            if length > 0:
-                buf = ctypes.create_unicode_buffer(length + 1)
-                ctypes.windll.user32.GetWindowTextW(hwnd, buf, length + 1)
-                title = buf.value
-                # 用关键字匹配
-                if "Bullet Physics" in title or "bullet" in title.lower():
-                    print(f"找到 PyBullet 窗口: hwnd={hwnd}, title='{title}'")
-                    result[0] = hwnd
-                    return False
-            return True
-
-        WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
-        ctypes.windll.user32.EnumWindows(WNDENUMPROC(callback), 0)
-        return result[0]
-
-
-    def hide_pybullet_window(self):
-        hwnd = self.find_pybullet_window()
-        if not hwnd:
-            print("no hwnd")
-            return
-        if hwnd:
-            ctypes.windll.user32.ShowWindow(hwnd, 0)   # 0 隐藏窗口，保留 gpu 加速
 
     def center_on_screen(self):
         screen = QDesktopWidget().availableGeometry()
