@@ -287,6 +287,13 @@ class GLURDFRenderer(QOpenGLWidget):
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
 
+        # 末端轨迹
+        self.trail_points = []       # [(x,y,z), ...]
+        self.trail_max = 3000
+        self.trail_enabled = True
+        self.trail_color = (1.0, 0.3, 0.0, 1.0)  # 橙色
+        self._end_effector = None    # None = 自动找最后一个末端连杆
+
     # ── API ──
     def set_joint_angle(self, index: int, angle: float):
         if 0 <= index < 6:
@@ -316,6 +323,40 @@ class GLURDFRenderer(QOpenGLWidget):
         """批量设置颜色，例 set_link_colors({'link1':(1,0,0,1), 'link2':(0,1,0,1), 'base_link':(0.5,0.5,0.5,1)})"""
         for name, rgba in mapping.items():
             self.set_link_color(name, rgba)
+
+    def clear_trail(self):
+        """清除末端轨迹"""
+        self.trail_points.clear()
+        self.update()
+
+    def set_trail_enabled(self, enabled: bool):
+        """启用/禁用轨迹绘制"""
+        self.trail_enabled = enabled
+        self.update()
+
+    def set_trail_color(self, rgba: tuple):
+        """设置轨迹颜色，例 set_trail_color((0, 1, 0, 1))"""
+        self.trail_color = tuple(rgba)
+        self.update()
+
+    def set_end_effector(self, link_name: str):
+        """手动指定末端连杆名，例 set_end_effector('link6')"""
+        self._end_effector = link_name
+
+    def _get_end_link_name(self):
+        """自动找到末端连杆名（树中最深的叶子节点）"""
+        if self._end_effector:
+            return self._end_effector
+        def _deepest(node, depth=0):
+            if not node.children:
+                return (node.name, depth)
+            best = (node.name, depth)
+            for c in node.children:
+                cand = _deepest(c, depth + 1)
+                if cand[1] > best[1]:
+                    best = cand
+            return best
+        return _deepest(self.root)[0]
 
     # ── OpenGL ──
     def initializeGL(self):
@@ -372,6 +413,16 @@ class GLURDFRenderer(QOpenGLWidget):
         glDisableClientState(GL_NORMAL_ARRAY)
         glDisableClientState(GL_VERTEX_ARRAY)
 
+        # 末端轨迹
+        end_name = self._get_end_link_name()
+        T_end = transforms.get(end_name, np.eye(4))
+        pos = T_end[:3, 3].copy()
+        if self.trail_enabled and len(self.trail_points) < self.trail_max:
+            if not self.trail_points or np.linalg.norm(pos - self.trail_points[-1]) > 1e-5:
+                self.trail_points.append(pos)
+        if self.trail_points:
+            self._draw_trail()
+
     def _draw_ground(self):
         glDisable(GL_LIGHTING)
         glColor4f(0.3, 0.3, 0.35, 0.5)
@@ -381,6 +432,23 @@ class GLURDFRenderer(QOpenGLWidget):
             glVertex3f(i * 0.1, 1.0, 0)
             glVertex3f(-1.0, i * 0.1, 0)
             glVertex3f(1.0, i * 0.1, 0)
+        glEnd()
+        glEnable(GL_LIGHTING)
+
+    def _draw_trail(self):
+        """绘制末端轨迹（不受光照影响）"""
+        glDisable(GL_LIGHTING)
+        glLineWidth(2.0)
+        glColor4f(*self.trail_color)
+        pts = self.trail_points
+        glBegin(GL_LINE_STRIP)
+        for p in pts:
+            glVertex3f(*p)
+        glEnd()
+        glPointSize(4.0)
+        glBegin(GL_POINTS)
+        for p in pts:
+            glVertex3f(*p)
         glEnd()
         glEnable(GL_LIGHTING)
 

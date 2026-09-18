@@ -23,13 +23,7 @@ from robot_opengl import GLURDFRenderer
 platform = "windows" #linux or windows
 sim_engine = "pybullet"
 rebot_ver = "DM"
-if rebot_ver == "DM":
-    urdf = Path(__file__).resolve().parent.parent / \
-            "urdf/reBot-DevArm_fixend_description/urdf/reBot-DevArm_fixend.urdf"
-elif rebot_ver == "RS":
-    urdf = Path(__file__).resolve().parent.parent / \
-            "urdf/00-arm-rs_asm-v3/urdf/00-arm-rs_asm-v3.urdf"
-    
+ 
 def resource_path(relative_path):
     """获取资源的绝对路径，兼容开发和打包环境"""
     if hasattr(sys, '_MEIPASS'):
@@ -38,6 +32,12 @@ def resource_path(relative_path):
     # 开发环境，相对于当前脚本所在目录
     base_dir = Path(__file__).resolve().parent.parent
     return base_dir / relative_path
+
+if rebot_ver == "DM":
+    urdf = resource_path("urdf/reBot-DevArm_fixend_description/urdf/reBot-DevArm_fixend.urdf")
+elif rebot_ver == "RS":
+    urdf = resource_path("urdf/reBot-DevArm_fixend_description/urdf/reBot-DevArm_fixend.urdf")
+
 
 class rebot_Simulation_App(QMainWindow):
     def __init__(self):
@@ -92,6 +92,13 @@ class rebot_Simulation_App(QMainWindow):
         self.show_collision.setStyleSheet("background-color: #4CAF50; color: white;")  # 绿色
         self.show_collision.clicked.connect(self.on_show_collision)
         top_layout.addWidget(self.show_collision)
+
+        # 轨迹显示按钮
+        self.show_traj_on = False # 默认不显示
+        self.show_traj = QPushButton("开启末端轨迹显示")
+        self.show_traj.setStyleSheet("background-color: #4CAF50; color: white;")  # 绿色
+        self.show_traj.clicked.connect(self.on_show_traj)
+        top_layout.addWidget(self.show_traj)
 
         # 弹性空间，将控件推至左上角
         top_layout.addStretch()  # 这会让下拉列表和按钮靠左
@@ -226,6 +233,7 @@ class rebot_Simulation_App(QMainWindow):
             pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 3, 4, enableCollision=0)
             pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 4, 5, enableCollision=0)
             pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 5, 6, enableCollision=0)
+            pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 3, 5, enableCollision=0)
             if rebot_ver == "RS":
                 pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 7, 8, enableCollision=0)
             self.show_rebot = GLURDFRenderer(str(urdf))
@@ -306,6 +314,15 @@ class rebot_Simulation_App(QMainWindow):
             self.show_collision.setText("开启碰撞显示")
             self.show_collision.setStyleSheet("background-color: #4CAF50; color: white;")  # 绿色
 
+    def on_show_traj(self):
+        if self.show_traj.text() == "开启末端轨迹显示":
+            self.show_traj_on = True
+            self.show_traj.setText("关闭末端轨迹显示")
+            self.show_traj.setStyleSheet("background-color: #f44336; color: white;")  # 红色
+        elif self.show_traj.text() == "关闭末端轨迹显示":
+            self.show_traj_on = False
+            self.show_traj.setText("开启末端轨迹显示")
+            self.show_traj.setStyleSheet("background-color: #4CAF50; color: white;")  # 绿色  
 
     # 重置仿真机械臂
     def reset_arm(self):
@@ -326,6 +343,7 @@ class rebot_Simulation_App(QMainWindow):
             maxVelocity=100.0,
             force=500                          # 最大力矩
         )
+        self.show_rebot.clear_trail()
         
             
             
@@ -474,8 +492,14 @@ class rebot_Simulation_App(QMainWindow):
         else:
             for link_name in self.robot_id_map.values():
                 self.show_rebot.set_link_color(link_name, (0.627, 0.627, 0.627, 1))   
+        if self.show_traj_on:
+            self.show_rebot.set_trail_enabled(True)
+        else:
+            self.show_rebot.clear_trail()
+            self.show_rebot.set_trail_enabled(False)
 
 
+            
     def update_show_collision(self):
         contacts = pybullet.getContactPoints(bodyA=self.robot_id, bodyB=self.robot_id)
         for i in range(pybullet.getNumJoints(self.robot_id)):
@@ -509,15 +533,15 @@ if __name__ == "__main__":
     except ImportError:
         pass
 
-    splash = QSplashScreen(QPixmap(str(resource_path("ico/splash.png"))))
-    splash.setWindowFlags(
-    Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.SplashScreen
-    )
-    splash.show()
+    # splash = QSplashScreen(QPixmap(str(resource_path("ico/splash.png"))))
+    # splash.setWindowFlags(
+    # Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.SplashScreen
+    # )
+    # splash.show()
 
     app.processEvents()
 
     window = rebot_Simulation_App()
-    splash.close()
+    # splash.close()
     window.show()
     sys.exit(app.exec_())
