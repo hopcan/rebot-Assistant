@@ -215,6 +215,7 @@ class reBotArm_handle:
             else :
                 self.log_handle.emit(f"motor {motor_can_id}: set zero failed")
         self.ctrl.enable_all()
+        return True
 
     def _change_motor_mode(self):
         for motor_can_id in list(range(1, 8)):
@@ -260,15 +261,15 @@ class reBotArm_handle:
             if self.arm_version == "rebotRS":
                 if self.motors[motor_can_id].use_mode == "MIT" :
                     self.motors[motor_can_id].handle.send_mit(
-                        pos=positions[motor_can_id-1]*-1,    
-                        vel=vel*-1,
+                        pos=positions[motor_can_id-1],    
+                        vel=vel,
                         kp=self.motors[motor_can_id].mit_cfg["kp"],    
                         kd=self.motors[motor_can_id].mit_cfg["kd"],    
-                        tau=tau*-1   
+                        tau=tau   
                     )
                 elif self.motors[motor_can_id].use_mode == "POS_VEL" :    
                     self.motors[motor_can_id].handle.send_pos_vel(
-                        pos=positions[motor_can_id-1]*-1,    # target angle（rad）
+                        pos=positions[motor_can_id-1],    # target angle（rad）
                         vlim=1.5    # max vel（rad/s）
                     )
             elif self.arm_version == "rebotDM":

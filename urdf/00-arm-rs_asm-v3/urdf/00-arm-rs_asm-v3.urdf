@@ -503,7 +503,7 @@
     </collision>
   </link>
   <joint
-    name="j_gripper_end"
+    name="gripper_joint"
     type="fixed">
     <origin
       xyz="0 0 0.16621"
@@ -556,7 +556,7 @@
     </collision>
   </link>
   <joint
-    name="joint_left"
+    name="gripper_joint_left"
     type="prismatic">
     <origin
       xyz="-0.041939 -7.3385E-05 0"
@@ -614,7 +614,7 @@
     </collision>
   </link>
   <joint
-    name="joint_right"
+    name="gripper_joint_right"
     type="prismatic">
     <origin
       xyz="-0.041939 7.3385E-05 0"
