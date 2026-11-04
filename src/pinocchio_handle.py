@@ -1,9 +1,17 @@
 import pinocchio as pin
 import numpy as np
 import yaml
+import sys
 from pathlib import Path
 
 project_root = Path(__file__).resolve().parent.parent
+
+
+def resource_path(relative_path):
+    """获取资源的绝对路径，兼容开发和打包环境"""
+    if hasattr(sys, '_MEIPASS'):
+        return Path(sys._MEIPASS) / relative_path
+    return project_root / relative_path
 
 
 def gravity_compensation_control(joints_pos,model,data,rebot_ver) :
@@ -144,7 +152,7 @@ def get_rebotArm_pos_limit(file_path):
         rebotArm_posmin[motor_can_id-1] = config['joints'][motor_can_id-1]['posmin']
     return rebotArm_posmax,rebotArm_posmin
 
-rebotArm_posmax,rebotArm_posmin = get_rebotArm_pos_limit(project_root/"config/rebotDM_ik.yaml")    
+rebotArm_posmax,rebotArm_posmin = get_rebotArm_pos_limit(resource_path("config/rebotDM_ik.yaml"))    
 
 def q_clip (q):   
     q_new = q

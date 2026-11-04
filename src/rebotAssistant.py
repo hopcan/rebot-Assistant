@@ -44,7 +44,7 @@ class rebot_Simulation_App(QMainWindow):
 
         # 设置窗口
         self.setWindowTitle("rebot Assistant")
-        self.setGeometry(100, 100, 400, 300)  # x, y, width, height
+        self.setGeometry(100, 100, 800, 300)  # x, y, width, height
         # self.center_on_screen()
         self.setWindowIcon(QIcon(str(resource_path("ico/seeed_studio.ico"))))
         self.setStyleSheet(style.main_window_style)

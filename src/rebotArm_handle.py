@@ -310,7 +310,6 @@ class reBotArm_handle:
                         pos=positions[motor_can_id-1],    # target angle（rad）
                         vlim=1.5    # max vel（rad/s）
                     )
-            self.motors[motor_can_id].state = self.motors[motor_can_id].handle.get_state()
         return True
 
     def return_zero_position(self):
@@ -324,8 +323,8 @@ class reBotArm_handle:
                         self.motors[motor_can_id].handle.send_mit(
                             pos=target_pos[motor_can_id - 1] ,    
                             vel=0.0,
-                            kp=20.0 ,   
-                            kd=12.0,    
+                            kp=10.0 ,   
+                            kd=5.0,    
                             tau=0.0   
                         )
                     if  self.motors[motor_can_id].use_mode == "POS_VEL":
@@ -339,8 +338,8 @@ class reBotArm_handle:
                         self.motors[motor_can_id].handle.send_mit(
                             pos=target_pos[motor_can_id - 1] ,    
                             vel=0.0,
-                            kp=20.0 ,   
-                            kd=12.0,    
+                            kp=10.0 ,   
+                            kd=5.0,    
                             tau=0.0   
                         )
                     if  self.motors[motor_can_id].use_mode == "POS_VEL":
@@ -378,7 +377,9 @@ class reBotArm_handle:
                             pos=0.0,    # target angle（rad）
                             vlim=1.5    # max vel（rad/s）
                         )
-                time.sleep(dt)
+                    time.sleep(dt)
+            for motor_can_id in list(range(1, 8)):
+                self.motors[motor_can_id].state = self.motors[motor_can_id].handle.get_state()
             return True
 
 

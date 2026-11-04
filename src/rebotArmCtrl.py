@@ -10,8 +10,6 @@ import pinocchio as pin
 import os
 
 base_dir = Path(__file__).resolve().parent.parent
-rebotDM_ik_file_path = os.fspath(base_dir / 'config' / 'rebotDM_ik.yaml')
-rebotDM_gravity_file_path = os.fspath(base_dir / 'config' / 'rebotDM_gravity.yaml')
 
 
 def resource_path(relative_path):
@@ -20,8 +18,11 @@ def resource_path(relative_path):
         # 打包后：资源在临时解压目录
         return Path(sys._MEIPASS) / relative_path
     # 开发环境，相对于当前脚本所在目录
-    base_dir = Path(__file__).resolve().parent.parent
     return base_dir / relative_path
+
+
+rebotDM_ik_file_path = os.fspath(resource_path("config/rebotDM_ik.yaml"))
+rebotDM_gravity_file_path = os.fspath(resource_path("config/rebotDM_gravity.yaml"))
 
 rebotArm_DM_model_path = resource_path("urdf/reBot-B601_DM_fixend/urdf/reBot-DevArm_fixend.urdf")
 # rebotArm_DM_model_path = resource_path("urdf/reBot_B601_DM/urdf/reBot_B601_DM.urdf")
@@ -98,6 +99,7 @@ class ArmControlThread(QThread):
                 while self._is_running:
 
                     if self.mode == "gravity_mode_on":
+                        handle.reconnect(config_path=rebotDM_gravity_file_path)
                         joints_pos = handle.return_joints_last_pos()
                         # joints_pos = handle.get_joints_state()
                         full_torques = pinocchio_handle.gravity_compensation_control(joints_pos ,self.model,self.data,self.rebot_ver)  
@@ -105,7 +107,8 @@ class ArmControlThread(QThread):
                         self.enable_change_mode = False
                     elif self.mode == "gravity_mode_off":
                         self.handle.return_zero_position()
-                        print("stop")
+                        time.sleep(1)
+                        self.handle.move_to_joint_positions(positions = [0]*7)
                         self.mode = None
                         self.enable_change_mode = True
 
@@ -119,6 +122,8 @@ class ArmControlThread(QThread):
                     if self.mode == "return_zero_pos_mode_on":
                         self.enable_change_mode = False
                         self.return_zero_pos_is_success.emit(handle.return_zero_position())
+                        time.sleep(1)
+                        handle.move_to_joint_positions(positions = [0]*7)
                         self.mode = None
                         self.enable_change_mode = True
 
@@ -183,12 +188,8 @@ class ArmControlThread(QThread):
                     self.addt += 0.002
                     if(self.addt > 0.02):
                         self.addt = 0
-                        # Matrix_t ,Matrix_r = pinocchio_handle.forwardKinematics_compute (handle,self.model,self.data)
-                        # x,y,z,roll_deg,pitch_deg,yaw_deg = pinocchio_handle.deal_with_matrix_t_r(Matrix_t,Matrix_r)
                         pos = self.handle.return_joints_last_pos()
                         self.rebot_arm_joints_pos.emit(pos) 
-                        
-                        # self.end_pose.emit([x,y,z,roll_deg,pitch_deg,yaw_deg]) 
                         self.wait_change_mode.emit(self.enable_change_mode) #向上层传递是否可以切换模式
                 self.connected.emit(f"断开连接")
                 self._is_running = False
@@ -197,9 +198,6 @@ class ArmControlThread(QThread):
 
     def _on_set_mode(self, mode):
         self.mode = mode
-        # print(self.enable_change_mode)
-        # print(mode)
-        # print(self.mode)
 
     def _on_mode_info(self, info):
         self.mode_detail_info = info
