@@ -1,11 +1,18 @@
 from PyQt5.QtCore import QThread, pyqtSignal
 from rebotArm_handle import reBotArm_handle
+from motor_handle import motor_handle
 from motorbridge import Controller
 import pinocchio_handle
 import time
 from pathlib import Path
 import sys
 import pinocchio as pin
+import os
+
+base_dir = Path(__file__).resolve().parent.parent
+rebotDM_ik_file_path = os.fspath(base_dir / 'config' / 'rebotDM_ik.yaml')
+rebotDM_gravity_file_path = os.fspath(base_dir / 'config' / 'rebotDM_gravity.yaml')
+
 
 def resource_path(relative_path):
     """获取资源的绝对路径，兼容开发和打包环境"""
@@ -44,6 +51,9 @@ class ArmControlThread(QThread):
         self.enable_change_mode = True
         self.mode_is_running = True # 是否先安全退出模式
 
+        self.Num = 0 # 轨迹点数
+        self.is_generate_traj= False
+
         # 绑定信号和槽函数
         self.set_mode_signal.connect(self._on_set_mode)
         if self.rebot_ver == "rebot-B601-DM":
@@ -80,17 +90,7 @@ class ArmControlThread(QThread):
                         joints_pos = handle.return_joints_last_pos()
                         # joints_pos = handle.get_joints_state()
                         full_torques = pinocchio_handle.gravity_compensation_control(joints_pos ,self.model,self.data,self.rebot_ver)  
-                        if self.rebot_ver == "rebot-B601-RS":
-                            neg_pos = [x for x in joints_pos]
-                            neg_torques=[x for x in full_torques]
-                            handle.move_to_joint_positions(positions = neg_pos,torque=neg_torques)   
-                        else: 
-                            handle.move_to_joint_positions(positions = joints_pos,torque=full_torques)
-                        # print("\nTORQUES:")
-                        # print(full_torques)
-                        print("tau_g:", full_torques[:6])
-                        print("\nPOS:")
-                        print(joints_pos)
+                        handle.move_to_joint_positions(positions = joints_pos,torque=full_torques)
                         self.enable_change_mode = False
                     elif self.mode == "gravity_mode_off":
                         self.handle.return_zero_position()
@@ -113,21 +113,61 @@ class ArmControlThread(QThread):
                         self.enable_change_mode = True
 
 
-                    if self.mode == "read_joint_mode_on":
-                        self.enable_change_mode = False
-                        self.rebot_arm_joints_pos.emit(handle.get_joints_state())
-
-                    elif self.mode == "read_joint_mode_off":
-                        self.enable_change_mode = True
-
+                    if self.mode == "move_end_mode_on":
+                        q_joints = [0]*7
+                        target_pos_point = [0.22 ,0.1, 0.3, 0, 0.67, 0]
+                        dt = 0.1
+                        T = 5
+                        if self.is_generate_traj == False:
+                            self.log_message.emit("开始生成轨迹！")
+                            handle.reconnect(config_path=rebotDM_ik_file_path)
+                            joints_pos = handle.return_joints_last_pos()
+                            orginal_joints_pos = joints_pos[:6]
+                            q_traj, q_num = pinocchio_handle.generate_traj(original_joints_pos = orginal_joints_pos,
+                            target_pos_point = target_pos_point,T = T,dt = dt,model = self.model, data = self.data,frame_id = None)
+                            self.is_generate_traj = True
+                        # 生成轨迹并且轨迹点数大于0，执行轨迹
+                        if self.is_generate_traj == True and q_num:
+                            if self.Num < q_num :
+                                q_joints[:6] = q_traj[self.Num]
+                                if self.Num < q_num:
+                                    joints_pos = handle.return_joints_last_pos()
+                                    full_torques = pinocchio_handle.gravity_compensation_control(joints_pos ,self.model,self.data,self.rebot_ver)  
+                                    handle.move_to_joint_positions(positions = q_joints,torque=full_torques)
+                                    time.sleep(0.02)
+                                    self.Num += 1
+                                self.enable_change_mode = False
+                            else:
+                                target = q_traj[-1]
+                                q_joints[:6] = target
+                                settle_cnt = 0
+                                handle.move_to_joint_positions(positions = q_joints)
+                                while settle_cnt < 100:  # 最多等 100*0.02 = 2s
+                                    now = handle.return_joints_last_pos()[:6]
+                                    self.rebot_arm_joints_pos.emit(now) 
+                                    err = max(abs(a - b) for a, b in zip(now, target))
+                                    if err < 0.02:
+                                        print("末端位置已稳定")
+                                        break
+                                    time.sleep(0.1)
+                                    settle_cnt += 1
+                                print(f"q_joints pos:{q_traj[self.Num-1]}")
+                                print(f"joints pos:{handle.return_joints_last_pos()}")
+                                self.Num = 0
+                                self.mode = None
+                                self.enable_change_mode = True
+                                self.is_generate_traj = False
+                                print("轨迹执行完毕！")
+                                
                     time.sleep(0.002)
                     self.addt += 0.002
-                    if(self.addt > 0.006):
+                    if(self.addt > 0.02):
                         self.addt = 0
                         # Matrix_t ,Matrix_r = pinocchio_handle.forwardKinematics_compute (handle,self.model,self.data)
                         # x,y,z,roll_deg,pitch_deg,yaw_deg = pinocchio_handle.deal_with_matrix_t_r(Matrix_t,Matrix_r)
                         pos = self.handle.return_joints_last_pos()
                         self.rebot_arm_joints_pos.emit(pos) 
+                        
                         # self.end_pose.emit([x,y,z,roll_deg,pitch_deg,yaw_deg]) 
                         self.wait_change_mode.emit(self.enable_change_mode) #向上层传递是否可以切换模式
                 self.connected.emit(f"断开连接")
@@ -147,7 +187,11 @@ class ArmControlThread(QThread):
 
 
 class MotorControlThread(QThread):
-    motor_pos = pyqtSignal(list) 
+    mode_result = pyqtSignal(dict) # 给上层传递模式结果
+    connected = pyqtSignal(str)  # 用于通知连接成功
+    mode_config_signal = pyqtSignal(dict) #上层传递模式和参数
+    error_occurred = pyqtSignal(str)  # 用于传递错误信息
+    log_message = pyqtSignal(str)  # 用于传递日志信息
     def __init__(self, channel,motor_ver):
         super().__init__()
         self.channel = channel
@@ -158,12 +202,51 @@ class MotorControlThread(QThread):
         self.handle = None
         self.ctrl = None
         self.addt = 0
-        self.mode = None
+        self.mode = None # 上层选择电机功能
         self.mode_is_running = True # 是否先安全退出模式
-
         # 绑定信号和槽函数
-        self.set_mode_signal.connect(self._on_set_mode)
-
+        self.mode_config_signal.connect(self._mode_fuction)
     def run(self):
-        return
+        try:
+            # 根据断开创建总线
+            if "can" in self.channel.lower():
+                self.ctrl = Controller(self.channel)
+            elif "com" in self.channel.lower():
+                self.ctrl = Controller.from_dm_serial(self.channel, self.baudrate)
+            else :
+                return False
+            print("motor thread is running")
+            print(self.motor_ver)
+            with motor_handle(self.ctrl, motor_version=self.motor_ver,log_handle=self.log_message) as handle:
+                self.handle = handle
+                self.connected.emit(f"连接成功")
+                print("motor handle is running")          
+                self._is_running = True
+                while self._is_running:
+                    if self.mode == "scan_motor":
+                        found_motors = self.handle.scan_motor(start_can_id=self.start_id,end_can_id=self.end_id)
+                        self.mode = "wait_motor"
+                        # 向上层发送扫描结果
+                        result = {"scan_mode":found_motors}
+                        self.mode_result.emit(result)
+                        print(found_motors)
+                self.connected.emit(f"断开连接")
+                self._is_running = False 
+        except Exception as e:
+            self.error_occurred.emit(str(e))
+            self.connected.emit(f"连接失败")
+            return
+
+    def _mode_fuction(self,mode):
+        self.mode = list(mode.keys())[0]
+        self.start_id = mode[self.mode]["start id"]
+        self.end_id = mode[self.mode]["end id"]
+        print("key:")
+        print(self.mode)
+        if self.mode == None or self.mode == "wait_motor":
+            self.mode = mode
+
+    def stop(self):                 
+        self._is_running = False    # 通知 while 循环退出
+        self.wait()                 # 等待 run() 真正返回
     

@@ -2,8 +2,8 @@ joints:
   - name: Shoulder Pan
     motor_can_id: 1   
     MIT:
-        kp: 2.0
-        kd: 1.0
+        kp: 120.0
+        kd: 8.0
     POS_VEL:
         vel_kp: 0.0125
         vel_ki: 0.004
@@ -12,13 +12,13 @@ joints:
         vlim: 5.0
     posmax: 2.6
     posmin: -2.6
-    use_mode: POS_VEL
+    use_mode: MIT
 
   - name: Shoulder Lift
     motor_can_id: 2 
     MIT:
-        kp: 2.0
-        kd: 1.0
+        kp: 120.0
+        kd: 8.0
     POS_VEL:
         vel_kp: 0.0125
         vel_ki: 0.004
@@ -27,13 +27,13 @@ joints:
         vlim: 5.0
     posmax: 0
     posmin: -3.8       
-    use_mode: POS_VEL
+    use_mode: MIT
 
   - name: Elbow Flex
     motor_can_id: 3 
     MIT:
-        kp: 2.0
-        kd: 1.0
+        kp: 120.0
+        kd: 8.0
     POS_VEL:
         vel_kp: 0.0125
         vel_ki: 0.004
@@ -42,13 +42,13 @@ joints:
         vlim: 5.0 
     posmax: 0
     posmin: -3.8
-    use_mode: POS_VEL
+    use_mode: MIT
 
   - name:  Wrist Flex
     motor_can_id: 4  
     MIT:
-        kp: 2.0
-        kd: 1.0
+        kp: 120.0
+        kd: 8.0
     POS_VEL:
         vel_kp: 0.0008
         vel_ki: 0.002
@@ -57,13 +57,13 @@ joints:
         vlim: 3.0 
     posmax: 1.57
     posmin: -1.57   
-    use_mode: POS_VEL
+    use_mode: MIT
 
   - name:  Wrist Yaw
     motor_can_id: 5  
     MIT:
-        kp: 2.0
-        kd: 1.0
+        kp: 18.0
+        kd: 2.0
     POS_VEL:
         vel_kp: 0.0008
         vel_ki: 0.002
@@ -72,14 +72,14 @@ joints:
         vlim: 3.0  
     posmax: 1.57
     posmin: -1.57 
-    use_mode: POS_VEL
+    use_mode: MIT
 
 
   - name:  Wrist Roll
     motor_can_id: 6  
     MIT:
-        kp: 2.0
-        kd: 1.0
+        kp: 18.0
+        kd: 2.0
     POS_VEL:
         vel_kp: 0.0008
         vel_ki: 0.002
@@ -88,7 +88,7 @@ joints:
         vlim: 3.0   
     posmax: 2.6
     posmin: -2.6
-    use_mode: POS_VEL
+    use_mode: MIT
 
 
   - name:  Gripper
@@ -104,4 +104,4 @@ joints:
         vlim: 3.0
     posmax: 0
     posmin: -5.2
-    use_mode: POS_VEL
+    use_mode: MIT

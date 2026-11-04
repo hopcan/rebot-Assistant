@@ -3,7 +3,7 @@ import time
 import yaml
 import os
 
-base_dir = os.path.dirname(os.path.abspath(__file__))
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 rebotDM_file_path = os.path.join(base_dir, 'config', 'rebotDM.yaml')
 rebotRS_file_path = os.path.join(base_dir, 'config', 'rebotRS.yaml')
 
@@ -52,8 +52,8 @@ class reBotArm_handle:
             config = yaml.safe_load(f)
         return config
 
-    def _check_is_cfg_valid(self):
-        config = self._load_robot_config() 
+    def _check_is_cfg_valid(self,path = None):
+        config = self._load_robot_config(file_path=path) 
         for motor_can_id in  list(range(0, 7)):
             if config['joints'][motor_can_id]['MIT']["kp"] == None or config['joints'][motor_can_id]['MIT']["kd"] == None:
                 self.log_handle.emit(f"\nMIT Configuration for motor {motor_can_id + 1} is invalid.Please check your configure yaml.")
@@ -179,6 +179,30 @@ class reBotArm_handle:
                 return False
         else :
             self.log_handle.emit("Failed to add motors to controller. Cannot connect.")
+            return False
+        
+    def reconnect(self,config_path):
+        # 重新加载配置文件
+        config = self._check_is_cfg_valid(config_path) 
+        if config == False:
+            return False
+        for motor_can_id in list(range(1, 8)):
+            self.motors[motor_can_id].mit_cfg = config['joints'][motor_can_id-1]['MIT']
+            self.motors[motor_can_id].pos_vel_cfg = config['joints'][motor_can_id-1]['POS_VEL']
+            self.motors[motor_can_id].use_mode = config['joints'][motor_can_id-1]['use_mode']
+            self.motors[motor_can_id].pos_max = config['joints'][motor_can_id-1]['posmax']
+            self.motors[motor_can_id].pos_min = config['joints'][motor_can_id-1]['posmin']
+        # 根据新的配置文件切换模式
+        try :
+            self.ctrl.enable_all()
+            if self._change_motor_mode() :
+                for motor_can_id in list(range(1,8)):
+                    self.motors[motor_can_id].state = self.motors[motor_can_id].handle.get_state()
+                return True
+            else :
+                return False
+        except Exception:
+            self.log_handle.emit("enable all motors failed")
             return False
         
     def disconnect(self):

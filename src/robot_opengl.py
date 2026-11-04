@@ -8,7 +8,10 @@ import xml.etree.ElementTree as ET
 from OpenGL.GL import *
 from OpenGL.GLU import gluPerspective, gluLookAt, gluNewQuadric, gluSphere, gluDeleteQuadric
 from PyQt5.QtCore import Qt, QPoint
-from PyQt5.QtGui import QMouseEvent, QWheelEvent
+from PyQt5.QtGui import (
+    QMouseEvent, QWheelEvent,
+    QColor, QFont, QFontMetrics, QImage, QPainter,
+)
 from PyQt5.QtWidgets import (
     QOpenGLWidget, QApplication, QMainWindow,
     QVBoxLayout, QHBoxLayout, QSlider, QLabel, QWidget,
@@ -56,6 +59,21 @@ def _rpy_to_mat(rpy):
         [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
         [-sp,     cp * sr,                cp * cr],
     ])
+
+
+def _mat_to_rpy(R):
+    """_rpy_to_mat 的逆：把旋转矩阵转回 roll/pitch/yaw（弧度），约定 R = Rz(y)·Ry(p)·Rx(r)"""
+    sp = max(-1.0, min(1.0, -R[2, 0]))
+    p = np.arcsin(sp)
+    cp = np.cos(p)
+    if cp > 1e-8:
+        r = np.arctan2(R[2, 1], R[2, 2])
+        y = np.arctan2(R[1, 0], R[0, 0])
+    else:
+        # 万向节锁（pitch≈±90°）：roll/yaw 退化，取一个等价解
+        r = np.arctan2(-R[1, 2], R[1, 1])
+        y = 0.0
+    return np.array([r, p, y])
 
 
 def _origin_to_mat(xyz, rpy):
@@ -323,6 +341,9 @@ class GLURDFRenderer(QOpenGLWidget):
         self._target_pos = None        # (x, y, z) or None（不显示）
         self._target_color = (1.0, 0.2, 0.2, 0.9)  # 红色
 
+        # 右上角末端位置数据框
+        self._hud_enabled = True
+
     # ── API ──
     def set_joint_angle(self, index: int, angle: float):
         if index < len(self._joint_order):
@@ -387,6 +408,11 @@ class GLURDFRenderer(QOpenGLWidget):
     def clear_target(self):
         """清除目标位置小球"""
         self._target_pos = None
+        self.update()
+
+    def set_hud_enabled(self, enabled: bool):
+        """显示/隐藏右上角末端位置数据框"""
+        self._hud_enabled = enabled
         self.update()
 
     def _get_end_link_name(self):
@@ -467,10 +493,12 @@ class GLURDFRenderer(QOpenGLWidget):
             tip_a = T_a[:3, 3] + T_a[:3, :3] @ self._tip_offset
             tip_b = T_b[:3, 3] + T_b[:3, :3] @ self._tip_offset
             pos = (tip_a + tip_b) / 2.0
+            rot = T_a[:3, :3].copy()
         else:
             end_name = self._get_end_link_name()
             T_end = transforms.get(end_name, np.eye(4))
             pos = T_end[:3, 3].copy()
+            rot = T_end[:3, :3].copy()
         if self.trail_enabled and len(self.trail_points) < self.trail_max:
             if not self.trail_points or np.linalg.norm(pos - self.trail_points[-1]) > 1e-5:
                 self.trail_points.append(pos)
@@ -480,6 +508,10 @@ class GLURDFRenderer(QOpenGLWidget):
         # 目标位置红色小球
         if self._target_pos is not None:
             self._draw_target_sphere()
+
+        # 右上角末端位姿数据框（屏幕空间 HUD）
+        if self._hud_enabled:
+            self._draw_hud(pos, _mat_to_rpy(rot))
 
     def _draw_ground(self):
         glDisable(GL_LIGHTING)
@@ -529,6 +561,101 @@ class GLURDFRenderer(QOpenGLWidget):
         glVertex3f(0, 0, -s); glVertex3f(0, 0, s)
         glEnd()
         glEnable(GL_LIGHTING)
+
+    def _draw_hud(self, pos, rpy):
+        """右上角半透明数据框，显示末端位置与姿态（屏幕空间，覆盖在 3D 场景之上）"""
+        w, h = self.width(), self.height()
+
+        # 切到屏幕空间：原点在左上角，y 向下
+        glMatrixMode(GL_PROJECTION)
+        glPushMatrix()
+        glLoadIdentity()
+        glOrtho(0, w, h, 0, -1, 1)
+        glMatrixMode(GL_MODELVIEW)
+        glPushMatrix()
+        glLoadIdentity()
+
+        glDisable(GL_DEPTH_TEST)
+        glDisable(GL_LIGHTING)
+        glEnable(GL_BLEND)
+
+        box_w, box_h = 220, 166
+        x0, y0 = w - box_w - 12, 12
+
+        # 半透明底框
+        glColor4f(0.08, 0.09, 0.11, 0.78)
+        glBegin(GL_QUADS)
+        glVertex2f(x0, y0); glVertex2f(x0 + box_w, y0)
+        glVertex2f(x0 + box_w, y0 + box_h); glVertex2f(x0, y0 + box_h)
+        glEnd()
+
+        # 边框
+        glColor4f(0.45, 0.56, 0.75, 1.0)
+        glLineWidth(1.5)
+        glBegin(GL_LINE_LOOP)
+        glVertex2f(x0, y0); glVertex2f(x0 + box_w, y0)
+        glVertex2f(x0 + box_w, y0 + box_h); glVertex2f(x0, y0 + box_h)
+        glEnd()
+
+        # 文字
+        self._draw_text(x0 + 10, y0 + 8,  "末端位姿 (end pose)", (0.75, 0.82, 0.92, 1.0), 13)
+        self._draw_text(x0 + 10, y0 + 34, "X:  %.4f m" % pos[0], (1.0, 0.72, 0.45, 1.0), 14)
+        self._draw_text(x0 + 10, y0 + 54, "Y:  %.4f m" % pos[1], (1.0, 0.72, 0.45, 1.0), 14)
+        self._draw_text(x0 + 10, y0 + 74, "Z:  %.4f m" % pos[2], (1.0, 0.72, 0.45, 1.0), 14)
+        r, p, y = np.degrees(rpy)
+        self._draw_text(x0 + 10, y0 + 94,  "Roll:  %.1f°" % r, (0.45, 0.85, 0.72, 1.0), 14)
+        self._draw_text(x0 + 10, y0 + 114, "Pitch: %.1f°" % p, (0.45, 0.85, 0.72, 1.0), 14)
+        self._draw_text(x0 + 10, y0 + 134, "Yaw:   %.1f°" % y, (0.45, 0.85, 0.72, 1.0), 14)
+
+        # 恢复 3D 状态
+        glMatrixMode(GL_PROJECTION)
+        glPopMatrix()
+        glMatrixMode(GL_MODELVIEW)
+        glPopMatrix()
+        glEnable(GL_DEPTH_TEST)
+        glEnable(GL_LIGHTING)
+
+    def _draw_text(self, x, y, text, color=(1, 1, 1, 1), px=14):
+        """QPainter 栅格化文字 → GL 纹理 → 屏幕空间贴图（原始 OpenGL 不能直接画字）"""
+        cache = getattr(self, "_text_cache", None)
+        if cache is None:
+            cache = self._text_cache = {}
+        key = (text, px)
+        if key not in cache:
+            font = QFont("Microsoft YaHei", px)
+            font.setWeight(QFont.DemiBold)
+            fm = QFontMetrics(font)
+            img = QImage(fm.horizontalAdvance(text), fm.height() + 4, QImage.Format_ARGB32)
+            img.fill(Qt.transparent)
+            p = QPainter(img)
+            p.setFont(font)
+            p.setPen(QColor(255, 255, 255, 255))
+            p.drawText(0, fm.ascent(), text)
+            p.end()
+            img = img.convertToFormat(QImage.Format_RGBA8888)
+            tw, th = img.width(), img.height()
+            ptr = img.constBits()
+            ptr.setsize(img.byteCount())
+            buf = bytes(ptr)
+            tex = glGenTextures(1)
+            glBindTexture(GL_TEXTURE_2D, tex)
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 4)
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tw, th, 0, GL_RGBA, GL_UNSIGNED_BYTE, buf)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+            cache[key] = (tex, tw, th)
+
+        tex, tw, th = cache[key]
+        glEnable(GL_TEXTURE_2D)
+        glBindTexture(GL_TEXTURE_2D, tex)
+        glColor4f(*color)
+        glBegin(GL_QUADS)
+        glTexCoord2f(0, 0); glVertex2f(x, y)
+        glTexCoord2f(1, 0); glVertex2f(x + tw, y)
+        glTexCoord2f(1, 1); glVertex2f(x + tw, y + th)
+        glTexCoord2f(0, 1); glVertex2f(x, y + th)
+        glEnd()
+        glDisable(GL_TEXTURE_2D)
 
     def _draw_link_array(self, node, transforms):
         if node._vert_data is not None and node.n_verts > 0:

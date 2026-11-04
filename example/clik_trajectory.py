@@ -18,7 +18,7 @@ data = model.createData()
 
 q_joints = [0]*7
 if __name__ == "__main__":
-    channel = "/dev/ttyACM0"  
+    channel = "COM16"  
     ctrl =Controller.from_dm_serial(channel, 921600)
 
     with reBotArm_handle(ctrl,"rebotDM",config_path = project_root/"config/rebotDM_ik.yaml") as handle:

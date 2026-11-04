@@ -22,8 +22,8 @@ main_window_style ="""
         # );
 function_btn_on_style = """
 QPushButton {
-    background-color: rgba(33, 150, 243, 0.5);   /* 半透明蓝 */
-        color: #F5F5F5;
+        background-color: rgba(200, 230, 201, 1);   /* 半透明蓝 */
+        color: black;
         border: 1px solid rgba(255, 255, 255, 0.3);
         border-radius: 8px;
         padding: 8px 10px;
@@ -154,9 +154,11 @@ QPushButton:pressed {
 
 show_collision_on_style = """
 QPushButton {
-    background-color: #FFEB3B;
+    background-color: white; 
     color: black;
-    border: 1px;
+    
+    border: 1px solid rgba(189, 189, 189, 0.5);
+
     border-radius: 8px;
     padding: 5px 5px;
     font-size: 14px;
@@ -164,18 +166,20 @@ QPushButton {
     min-height: 20px;
 }
 QPushButton:hover {
-    background-color: #FDD835;
+    background-color: #FFF7CC;
 }
 QPushButton:pressed {
-    background-color: #FFF176;
+    background-color: #FFE9A8;
 }
 """
 
 show_collision_off_style = """
 QPushButton {
-    background-color: #FF9800;
+    background-color: #FFE9A8;
     color: black;
-    border: 1px;
+
+    border: 1px solid rgba(189, 189, 189, 0.5);
+    
     border-radius: 8px;
     padding: 5px 5px;
     font-size: 14px;
@@ -183,10 +187,10 @@ QPushButton {
     min-height: 20px;
 }
 QPushButton:hover {
-    background-color: #F57C00;
+    background-color: #FFE082;
 }
 QPushButton:pressed {
-    background-color: #EF6C00;
+    background-color: #FFE082;
 }
 
 """
@@ -194,12 +198,12 @@ QPushButton:pressed {
 
 slider_style = """
 QSlider::groove:horizontal {
-    height: 6px;
+    height: 12px;
     background: #E0E0E0;
     border-radius: 3px;
 }
 QSlider::sub-page:horizontal {
-    background: #FFCDD2;      /* 已滑过：粉色 */
+    background: #C8E6C9;      /* 已滑过*/
     border-radius: 3px;
 }
 QSlider::add-page:horizontal {
@@ -207,11 +211,10 @@ QSlider::add-page:horizontal {
     border-radius: 3px;
 }
 QSlider::handle:horizontal {
-    background: #F8BBD0;      /* 滑块：深粉 */
-    width: 18px;
+    background: #C8E6C9;      /* 滑块*/
+    width: 12px;
     height: 12px;
-    margin: -6px 0;           /* 让滑块盖住滑槽 */
-    border-radius: 9px;
+    margin: 0;           /* 让滑块盖住滑槽 */
 }
 QSlider::handle:horizontal:hover {
     background: #C71585;

@@ -20,7 +20,7 @@ from robot_opengl import GLURDFRenderer
 platform = "windows" #linux or windows
 sim_engine = "pybullet"
 rebot_ver = None
- 
+motor_ver = None
 def resource_path(relative_path):
     """获取资源的绝对路径，兼容开发和打包环境"""
     if hasattr(sys, '_MEIPASS'):
@@ -206,10 +206,11 @@ class rebot_Simulation_App(QMainWindow):
         self.mode_layout.addWidget(self.record_mode_btn)
         self.record_mode_btn.setEnabled(False)
 
-        self.read_joint_mode_btn = QPushButton("开启实时读取关节角度")
-        self.read_joint_mode_btn.clicked.connect(self.read_joint_mode)
-        self.read_joint_mode_btn.setStyleSheet(style.function_btn_on_style) 
-        self.mode_layout.addWidget(self.read_joint_mode_btn)
+        self.move_end_mode_btn = QPushButton("末端移动到指定位置")
+        self.move_end_mode_btn.clicked.connect(self.move_end_mode)
+        self.move_end_mode_btn.setStyleSheet(style.function_btn_on_style)
+        self.mode_layout.addWidget(self.move_end_mode_btn)
+        # self.move_end_mode_btn.setEnabled(False)
 
         self.reset_arm_btn = QPushButton("重置仿真机械臂")
         self.reset_arm_btn.clicked.connect(self.reset_arm)
@@ -371,7 +372,7 @@ class rebot_Simulation_App(QMainWindow):
                     self.arm_thread = None 
                     time.sleep(0.1)
                 elif self.arm_thread and self.enable_change_mode == False:
-                    self.log_area.append("请先关闭模式。")
+                    self.log_area.append("请先关闭模式或者等待模式完全退出。")
 
     def on_show_collision(self):
         if self.show_collision.text() == "开启碰撞显示":
@@ -502,16 +503,15 @@ class rebot_Simulation_App(QMainWindow):
                 self.record_mode_btn.setStyleSheet(style.function_btn_on_style)  
         return
 
-    def read_joint_mode(self):
+    def move_end_mode(self):
         if self.arm_thread:
-            if self.read_joint_mode_btn.text() == "开启实时读取关节角度" and self.enable_change_mode:
-                self.arm_thread.set_mode_signal.emit("read_joint_mode_on")
-                self.read_joint_mode_btn.setText("关闭实时读取关节角度")
-                self.read_joint_mode_btn.setStyleSheet(style.function_btn_off_style)  # 红色
-            elif self.read_joint_mode_btn.text() == "关闭实时读取关节角度" :
-                self.arm_thread.set_mode_signal.emit("read_joint_mode_off")
-                self.read_joint_mode_btn.setText("开启实时读取关节角度")
-                self.read_joint_mode_btn.setStyleSheet(style.function_btn_on_style)  
+            if self.move_end_mode_btn.text() == "末端移动到指定位置" and self.enable_change_mode:
+                self.arm_thread.set_mode_signal.emit("move_end_mode_on")
+                self.move_end_mode_btn.setText("末端正在移动中")
+                self.move_end_mode_btn.setStyleSheet(style.function_btn_off_style)  # 红色
+            # 等待末端移动完成
+            elif self.move_end_mode_btn.text() == "末端正在移动中" :
+                self.log_area.append("请等待末端移动完成后再点击。")
         return
 
 
@@ -573,6 +573,7 @@ class rebot_Simulation_App(QMainWindow):
             self.btn_connect.setStyleSheet(style.arm_connect_on_style)  # 绿色
             self.status_label.setText("已断开")
         self.log_area.append(msg)
+
 
     def on_pos_received(self,pos):
         for i in range(len(pos)):
@@ -670,7 +671,7 @@ class rebot_Simulation_App(QMainWindow):
         self.motor_top_layout.addWidget(self.motor_btn_scan)
 
         # 连接按钮
-        self.motor_btn_connect = QPushButton("连接端口")
+        self.motor_btn_connect = QPushButton("连接")
         self.motor_btn_connect.setStyleSheet(style.arm_connect_on_style)  # 绿色
         self.motor_btn_connect.clicked.connect(self.motor_on_connect)
         self.motor_top_layout.addWidget(self.motor_btn_connect)
@@ -711,14 +712,6 @@ class rebot_Simulation_App(QMainWindow):
         self.motor_show_card_layout.setContentsMargins(0, 0, 0, 0)
         self.motor_show_card_layout.setSpacing(10)
 
-        self.canid=0x01
-        self.masterid=0x10+0x01
-        self.motor_btn_card = QPushButton(f"CAN ID: {self.canid}\nMASTER ID : {self.masterid}\nSTATE: disabled")
-        self.motor_btn_card.setStyleSheet(style.motor_btn_card_enable_style)
-
-        self.motor_show_card_layout.addWidget(self.motor_btn_card)
-        self.motor_show_card_layout.addStretch()  # 弹性空间，将按钮推至顶部
-
         # 电机参数显示区域
         self.motor_show_param = QFrame()
 
@@ -727,9 +720,11 @@ class rebot_Simulation_App(QMainWindow):
         self.motor_show_card.setStyleSheet(style.motor_show_card_style)
         self.motor_show_param.setStyleSheet(style.motor_show_param_style)
 
+        # 电机显示按钮
+        self.motor_btn_card_list = []
     
 
-
+    # 扫描设备
     def motor_on_scan(self):
         """处理扫描按钮点击事件"""
         self.motor_log_area.clear()
@@ -763,10 +758,108 @@ class rebot_Simulation_App(QMainWindow):
             self.motor_log_area.append("请先选择一个有效设备。")
             return
         else:
-            return 
+            """处理连接按钮点击事件"""
+            if self.motor_btn_connect.text() == "连接":
 
-    def motor_on_scan_motor(self):
+                # 创建线程对象
+                self.motor_thread = rebotArmCtrl.MotorControlThread(selected,motor_ver)
+                # 创建线程信号
+
+                # 绑定信号
+                self.motor_thread.log_message.connect(self.on_motor_log)
+                self.motor_thread.error_occurred.connect(self.on_motor_error)
+                self.motor_thread.connected.connect(self.on_motor_thread_connected)  # 连接成功信号绑定到日志输出
+                self.motor_thread.mode_result.connect(self.mode_result_recieve) # 接收模式结果
+                # 启动控制线程
+                self.motor_thread.start()
+
+            elif self.motor_btn_connect.text() == "断开":
+                # 执行断开操作...
+                # 点击使能才能断开
+                if self.motor_thread :
+                    self.motor_thread.stop()     
+                    self.motor_thread = None 
+                    time.sleep(0.1)
+                # elif self.motor_thread and self.enable_change_mode == False:
+                #     self.log_area.append("请先关闭模式。")
+    
+    # 判断电机线程是否成功创建
+    def on_motor_thread_connected(self, msg):
+        """接收线程连接成功信号"""
+        if msg == "连接成功":
+            self.motor_btn_connect.setText("断开")
+            self.motor_btn_connect.setStyleSheet(style.arm_connect_off_style)  # 红色
+            self.status_label.setText("已连接")
+        elif msg == "连接失败" or msg == "断开连接":
+            self.motor_btn_connect.setText("连接")
+            self.motor_btn_connect.setStyleSheet(style.arm_connect_on_style)  # 绿色
+            self.status_label.setText("已断开")
+        self.motor_log_area.append(msg)
+
+    # 接收模式结果并处理
+    def mode_result_recieve(self,msg):
+        mode = list(msg.keys())[0]
+        if mode == "scan_mode":
+            motor_list = msg[mode]
+            self.motor_clear_motor_btn()
+            if motor_list:
+                for motor in motor_list:
+                    can_id ,master_id = motor
+                    self.motor_add_motor_btn(can_id,master_id)
+                print(self.motor_btn_card_list)
+                self.motor_show_card_layout.addStretch()
         return 
+    
+    # 扫描电机
+    def motor_on_scan_motor(self):
+        # 获取输入行数字
+        try:
+            start_id_val = int(self.motor_start_id_edit.text())
+        except ValueError:
+            start_id_val = 0   # 默认值
+            self.motor_log_area.append("请输入扫描电机起始id。")
+            return 
+        try:
+            end_id_val = int(self.motor_end_id_edit.text())
+        except ValueError:
+            end_id_val = 0   # 默认值
+            self.motor_log_area.append("请输入扫描电机结束id。")
+            return
+
+        config = {"scan_motor":{"start id":start_id_val,"end id" :end_id_val}}
+        self.motor_thread.mode_config_signal.emit(config)
+        return 
+
+    # 添加卡片
+    def motor_add_motor_btn(self,can_id,master_id):
+        motor_btn_card = QPushButton(f"CAN ID: {can_id}\nMASTER ID : {master_id}\nSTATE: disabled")
+        motor_btn_card.setStyleSheet(style.motor_btn_card_enable_style)
+        self.motor_show_card_layout.addWidget(motor_btn_card)
+        self.motor_btn_card_list.append(motor_btn_card)
+        return 
+
+    # 清除卡片
+    def motor_clear_motor_btn(self):
+        layout = self.motor_show_card_layout
+        # 倒序遍历，同时移除 widget 和 spacer
+        for i in range(layout.count() - 1, -1, -1):
+            item = layout.takeAt(i)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+            # spacer 不需要 deleteLater，takeAt 取出即脱离布局
+        # 清空按钮列表
+        self.motor_btn_card_list.clear()
+        return 
+
+    # 处理日志
+    def on_motor_error(self, msg):
+        """接收错误信号"""
+        self.motor_log_area.append(f"[错误] {msg}")
+
+    def on_motor_log(self, msg):
+        """接收错误信号"""
+        self.motor_log_area.append(f"{msg}")
 
 #############################
 #######选择机械臂对话框########
@@ -780,9 +873,13 @@ class rebotSelectDialog(QDialog):
         self.setModal(True)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("请选择机械臂类型"))
+
+        title_label = QLabel("请选择机械臂类型")
+        title_label.setStyleSheet("font-size: 15px;")
+        layout.addWidget(title_label)
 
         self.combo = QComboBox()
+        self.combo.setStyleSheet("font-size: 14px; padding: 4px;")
         self.combo.addItems(["rebot-B601-DM", "rebot-B601-RS"])
         layout.addWidget(self.combo)
 
@@ -806,7 +903,7 @@ class rebotSelectDialog(QDialog):
     def center_on_screen(self):
         screen = QDesktopWidget().availableGeometry()
         x = (screen.width() - 800) // 2
-        y = (screen.height() - 100) // 2
+        y = (screen.height() - 150) // 2
         self.move(x, y)
 ######################################
 ######################################
@@ -822,7 +919,7 @@ if __name__ == "__main__":
     except ImportError:
         pass
 
-    # splash = QSplashScreen(QPixmap(str(resource_path("ico/splash.png"))))
+    # splash = QSplashScreen(QPixmap(str(resource_path("ico/cover.png"))))
     # splash.setWindowFlags(
     # Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.SplashScreen
     # )
@@ -835,8 +932,10 @@ if __name__ == "__main__":
 
     rebot_ver = dlg.selected()
     if rebot_ver == "rebot-B601-DM":  
+        motor_ver = "DM"
         urdf = resource_path("urdf/reBot_B601_DM/urdf/reBot_B601_DM.urdf")
     elif rebot_ver == "rebot-B601-RS":
+        motor_ver = "RS"
         urdf = resource_path("urdf/00-arm-rs_asm-v3/urdf/00-arm-rs_asm-v3.urdf")
     window = rebot_Simulation_App()
     # splash.close()
