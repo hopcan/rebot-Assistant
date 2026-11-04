@@ -21,6 +21,7 @@ platform = "windows" #linux or windows
 sim_engine = "pybullet"
 rebot_ver = None
 motor_ver = None
+render_urdf = None
 def resource_path(relative_path):
     """获取资源的绝对路径，兼容开发和打包环境"""
     if hasattr(sys, '_MEIPASS'):
@@ -155,6 +156,20 @@ class rebot_Simulation_App(QMainWindow):
         self.show_traj.clicked.connect(self.on_show_traj)
         self.top_layout.addWidget(self.show_traj)
 
+         # 末端期望位姿态输入行
+        self.expect_end_pos_label = QLabel("末端期望位姿(m、rad)/执行时间(s):")
+        self.expect_end_pos_label.setStyleSheet("font-size: 12px;")
+        self.top_layout.addSpacing(5)   # 与左侧按钮保持距离
+        self.top_layout.addWidget(self.expect_end_pos_label)
+
+        self.expect_end_pos_edit = QLineEdit()
+        self.expect_end_pos_edit.setPlaceholderText("格式:x y z pitch roll yaw time")
+        self.expect_end_pos_edit.setClearButtonEnabled(True)
+        self.expect_end_pos_edit.setMaximumWidth(500)
+        self.expect_end_pos_edit.setMinimumWidth(190)   # 至少 300px，还能随窗口变宽
+        self.top_layout.addSpacing(1)   # 与左侧按钮保持距离
+        self.top_layout.addWidget(self.expect_end_pos_edit)
+
         # 弹性空间，将控件推至左上角
         self.top_layout.addStretch()  # 这会让下拉列表和按钮靠左
 
@@ -197,14 +212,12 @@ class rebot_Simulation_App(QMainWindow):
         self.set_zero_mode_btn = QPushButton("设置机械臂零点")
         self.set_zero_mode_btn.clicked.connect(self.set_zero_mode)
         self.set_zero_mode_btn.setStyleSheet(style.function_btn_on_style) 
-        self.set_zero_mode_is_done = False
         self.mode_layout.addWidget(self.set_zero_mode_btn)
 
-        self.record_mode_btn = QPushButton("开启示教")
-        self.record_mode_btn.clicked.connect(self.record_mode)
-        self.record_mode_btn.setStyleSheet(style.function_btn_on_style) 
-        self.mode_layout.addWidget(self.record_mode_btn)
-        self.record_mode_btn.setEnabled(False)
+        self.return_zero_pos_mode_btn = QPushButton("回到零位")
+        self.return_zero_pos_mode_btn.clicked.connect(self.return_zero_pos_mode)
+        self.return_zero_pos_mode_btn.setStyleSheet(style.function_btn_on_style)
+        self.mode_layout.addWidget(self.return_zero_pos_mode_btn)
 
         self.move_end_mode_btn = QPushButton("末端移动到指定位置")
         self.move_end_mode_btn.clicked.connect(self.move_end_mode)
@@ -229,7 +242,7 @@ class rebot_Simulation_App(QMainWindow):
             self.slider_min = [-2.6,-3.8,-3.8, -1.56,-1.56,-3.14,-5.67]
             self.slider_max = [2.6,0,0, 1.56,1.56,3.14,0 ]
             self.robot_id_map = {-1:"base_link", 0:"link1",1:"link2",2:"link3",3:"link4",
-                            4:"link5",5:"link6",6:"gripper_link",7:"gripper_left",8:"gripper_right"}
+                            4:"link5",5:"link6",6:"end_link",7:"finger_left_link",8:"finger_right_link"}
         elif rebot_ver == "rebot-B601-RS":
             self.slider_min = [-2.6,0,0, -1.56,-1.56,-3.14,-5.67]
             self.slider_max = [2.6,3.8,3.8, 1.56,1.56,3.14,0 ]
@@ -304,9 +317,9 @@ class rebot_Simulation_App(QMainWindow):
             pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 3, 5, enableCollision=0)
             pybullet.setCollisionFilterPair(self.robot_id, self.robot_id, 7, 8, enableCollision=0)
 
-            self.show_rebot = GLURDFRenderer(str(urdf))
+            self.show_rebot = GLURDFRenderer(str(render_urdf))
             self.rebot_main_layout.addWidget(self.show_rebot , stretch=4)
-            self.show_rebot.set_end_effector("gripper_end")
+            self.show_rebot.set_end_effector("end_link" if rebot_ver == "rebot-B601-DM" else "gripper_end")
 
 
             # 定时更新渲染
@@ -357,6 +370,8 @@ class rebot_Simulation_App(QMainWindow):
                 self.arm_thread.rebot_arm_joints_pos.connect(self.on_pos_received)
                 self.arm_thread.set_zero_is_success.connect(self.on_set_zero_is_done_received)
                 self.arm_thread.wait_change_mode.connect(self.on_wait_change_mode)
+                self.arm_thread.return_zero_pos_is_success.connect(self.on_return_zero_pos_is_done_received)
+                self.arm_thread.move_end_to_pos_is_success.connect(self.on_move_end_to_pos_is_done_received)
                 # 绑定信号
                 self.arm_thread.log_message.connect(self.on_log)
                 self.arm_thread.error_occurred.connect(self.on_error)
@@ -470,6 +485,21 @@ class rebot_Simulation_App(QMainWindow):
             else:
                 print(f"[其他] index={j:2d} name={joint_name:20s} type={joint_type} range=[{info[8]:.2f}, {info[9]:.2f}]")
 
+    def get_expect_end_pos(self):
+        raw = self.expect_end_pos_edit.text().strip()
+        if not raw:
+            # 用户没输入
+            return None
+        try:
+            parts = raw.split()                 # 按任意空白拆分，自动处理多空格
+            if len(parts) != 7:
+                raise ValueError(f"需要 7 个数值，实际 {len(parts)} 个")
+            x, y, z, pitch, roll, yaw, time = map(float, parts)
+            return x, y, z, pitch, roll, yaw, time
+        except ValueError as e:
+            # 格式错误，提示用户
+            self.log_area.append(f"格式错误: {e}")
+            return False
 
     def gravity_mode(self):
         if self.arm_thread :
@@ -491,28 +521,41 @@ class rebot_Simulation_App(QMainWindow):
                 self.set_zero_mode_btn.setStyleSheet(style.function_btn_off_style)  # 红色
         return
 
-    def record_mode(self):
+    def return_zero_pos_mode(self):
         if self.arm_thread:
-            if self.record_mode_btn.text() == "开启示教" and self.enable_change_mode:
-                self.arm_thread.set_mode_signal.emit("record_mode_on")
-                self.record_mode_btn.setText("关闭示教")
-                self.record_mode_btn.setStyleSheet(style.function_btn_off_style)  # 红色
-            elif self.record_mode_btn.text() == "关闭示教" :
-                self.arm_thread.set_mode_signal.emit("record_mode_off")
-                self.record_mode_btn.setText("开启示教")
-                self.record_mode_btn.setStyleSheet(style.function_btn_on_style)  
+            if self.return_zero_pos_mode_btn.text() == "回到零位" and self.enable_change_mode:
+                self.arm_thread.set_mode_signal.emit("return_zero_pos_mode_on")
+                self.return_zero_pos_mode_btn.setText("正在回到零位")
+                self.return_zero_pos_mode_btn.setStyleSheet(style.function_btn_off_style)  # 红色
+            elif self.return_zero_pos_mode_btn.text() == "正在回到零位" :
+                self.log_area.append("请等待机械臂回到零位后再点击。")
         return
 
     def move_end_mode(self):
         if self.arm_thread:
             if self.move_end_mode_btn.text() == "末端移动到指定位置" and self.enable_change_mode:
-                self.arm_thread.set_mode_signal.emit("move_end_mode_on")
+                result = self.get_expect_end_pos()
+                if result is None:
+                    self.log_area.append("请在输入框中输入末端期望位姿。")
+                    return
+                elif result is False:
+                    self.log_area.append("末端期望位姿格式错误，请检查输入。")
+                    return
+                x, y, z, pitch, roll, yaw, time = result
+                if time <= 0:
+                    self.log_area.append("执行时间必须大于零，请检查输入。")
+                    return
+                self.log_area.append(f"末端期望位姿: (x:{x}m, y:{y}m, z:{z}m, pitch:{pitch}rad, roll:{roll}rad, yaw:{yaw}rad), time:{time}s")
+                self.arm_thread.set_mode_signal.emit(f"move_end_mode_on")
+                self.arm_thread.mode_info.emit(" ".join(str(v) for v in result))
+                
                 self.move_end_mode_btn.setText("末端正在移动中")
                 self.move_end_mode_btn.setStyleSheet(style.function_btn_off_style)  # 红色
             # 等待末端移动完成
             elif self.move_end_mode_btn.text() == "末端正在移动中" :
                 self.log_area.append("请等待末端移动完成后再点击。")
         return
+
 
 
 
@@ -582,15 +625,28 @@ class rebot_Simulation_App(QMainWindow):
             self.sliders[i].sliderReleased.emit()  
 
     def on_set_zero_is_done_received(self,is_set_zero_success):
-        self.set_zero_mode_is_done = True
         self.set_zero_mode_btn.setText("设置机械臂零点")
         self.set_zero_mode_btn.setStyleSheet(style.function_btn_on_style) 
         if is_set_zero_success:
             self.log_area.append("设置零点成功。")
         else:
             self.log_area.append("设置零点失败，请重试。")
-            
 
+    def on_return_zero_pos_is_done_received(self,is_return_zero_pos_success):
+        self.return_zero_pos_mode_btn.setText("回到零位")
+        self.return_zero_pos_mode_btn.setStyleSheet(style.function_btn_on_style) 
+        if is_return_zero_pos_success:
+            self.log_area.append("机械臂已回到零位。")
+        else:
+            self.log_area.append("机械臂回到零位失败，请重试。")
+
+    def on_move_end_to_pos_is_done_received(self,is_move_end_to_pos_success):
+        self.move_end_mode_btn.setText("末端移动到指定位置")
+        self.move_end_mode_btn.setStyleSheet(style.function_btn_on_style) 
+        if is_move_end_to_pos_success:
+            self.log_area.append("末端已移动到指定位置。")
+        else:
+            self.log_area.append("末端无法移动到指定位置，请重试。")
     def on_wait_change_mode(self,enable_change_mode):
         self.enable_change_mode = enable_change_mode
         # print(self.enable_change_mode)
@@ -615,7 +671,7 @@ class rebot_Simulation_App(QMainWindow):
             self.update_show_collision()
         else:
             for link_name in self.robot_id_map.values():
-                self.show_rebot.set_link_color(link_name, (0.627, 0.627, 0.627, 1))   
+                self.show_rebot.set_link_tint(link_name, None)   # 恢复自然色   
         # 显示末端轨迹
         if self.show_traj_on:
             self.show_rebot.set_trail_enabled(True)
@@ -630,7 +686,7 @@ class rebot_Simulation_App(QMainWindow):
     def update_show_collision(self):
         contacts = pybullet.getContactPoints(bodyA=self.robot_id, bodyB=self.robot_id)
         for i in range(pybullet.getNumJoints(self.robot_id)):
-            self.show_rebot.set_link_color(self.robot_id_map[i], (0.627, 0.627, 0.627, 1))    
+            self.show_rebot.set_link_tint(self.robot_id_map[i], None)   # 恢复自然色
 
         if contacts:
             self.colliding.clear()
@@ -641,7 +697,7 @@ class rebot_Simulation_App(QMainWindow):
             for i in range(pybullet.getNumJoints(self.robot_id)):
                 if i in self.colliding:
                     # 碰撞的连杆红色
-                    self.show_rebot.set_link_color(self.robot_id_map[i], (1, 0, 0, 1))    # 红色
+                    self.show_rebot.set_link_tint(self.robot_id_map[i], (1, 0, 0, 1))    # 红色
 
     def center_on_screen(self):
         screen = QDesktopWidget().availableGeometry()
@@ -931,12 +987,15 @@ if __name__ == "__main__":
         sys.exit(0)
 
     rebot_ver = dlg.selected()
-    if rebot_ver == "rebot-B601-DM":  
+    if rebot_ver == "rebot-B601-DM":
         motor_ver = "DM"
         urdf = resource_path("urdf/reBot_B601_DM/urdf/reBot_B601_DM.urdf")
+        # 只换渲染：渲染用带颜色的 URDF，物理仿真仍用上面的 urdf
+        render_urdf = resource_path("description/rebotDM/urdf/ReBot_Arm_DM.urdf")
     elif rebot_ver == "rebot-B601-RS":
         motor_ver = "RS"
         urdf = resource_path("urdf/00-arm-rs_asm-v3/urdf/00-arm-rs_asm-v3.urdf")
+        render_urdf = urdf
     window = rebot_Simulation_App()
     # splash.close()
     window.show()

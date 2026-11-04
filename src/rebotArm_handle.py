@@ -379,6 +379,7 @@ class reBotArm_handle:
                             vlim=1.5    # max vel（rad/s）
                         )
                 time.sleep(dt)
+            return True
 
 
     def __enter__(self):

@@ -22,9 +22,9 @@ main_window_style ="""
         # );
 function_btn_on_style = """
 QPushButton {
-        background-color: rgba(200, 230, 201, 1);   /* 半透明蓝 */
+        background-color: rgba(255, 255, 255, 1);   /* 半透明蓝 */
         color: black;
-        border: 1px solid rgba(255, 255, 255, 0.3);
+        border: 1px solid rgba(189, 189, 189, 1) ;
         border-radius: 8px;
         padding: 8px 10px;
         font-size: 14px;
@@ -32,14 +32,16 @@ QPushButton {
         min-height: 16px;                             /* 15px 太小，建议 32 */
 }
 QPushButton:hover {
-    background-color: #1976D2;
+    background-color: #E0E0E0;
+    border-color: #9E9E9E;
 }
 QPushButton:pressed {
-    background-color: #0D47A1;
+    background-color: #BDBDBD;
+    border-color: #757575;
 }
 QPushButton:disabled {
-    background-color: #BDBDBD;
-    color: #757575;
+    background-color: white;
+    color: black;
 }
 """
 
@@ -74,12 +76,11 @@ QPushButton {
     min-height: 20px;
 
     background-color: rgba(255, 255, 255, 0.15);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    border-color: #BDBDBD;
+    border: 1px solid rgba(189, 189, 189, 1);
     border-radius: 12px;
 }
 QPushButton:hover {
-    background-color: #F5F5F5;
+    background-color: #E0E0E0;
     border-color: #9E9E9E;
 }
 QPushButton:pressed {
@@ -89,9 +90,9 @@ QPushButton:pressed {
 """
 arm_connect_on_style = """
 QPushButton {
-    background-color: #00C853;
-    color: white;
-    border: 1px;
+    background-color: #E0F2F1;
+    color: black;
+    border: 1px solid rgba(189, 189, 189, 0.8) ;
     border-radius: 8px;
     padding: 5px 5px;
     font-size: 14px;
@@ -99,10 +100,10 @@ QPushButton {
     min-height: 20px;
 }
 QPushButton:hover {
-    background-color: #4CAF50;
+    background-color: #B2DFDB;
 }
 QPushButton:pressed {
-    background-color: #2E7D32;
+    background-color: #80CBC4;
 }
 QPushButton:disabled {
     background-color: #C8E6C9;
@@ -135,9 +136,9 @@ QPushButton:disabled {
 
 scan_style = """
 QPushButton {
-    background-color: #FFCDD2;
+    background-color: #FFEBEE;
     color: black;
-    border: 1px;
+    border: 1px solid rgba(189, 189, 189, 0.8);
     border-radius: 8px;
     padding: 5px 5px;
     font-size: 14px;
@@ -166,16 +167,16 @@ QPushButton {
     min-height: 20px;
 }
 QPushButton:hover {
-    background-color: #FFF7CC;
+    background-color: #EEEEEE;
 }
 QPushButton:pressed {
-    background-color: #FFE9A8;
+    background-color: #FFEBEE;
 }
 """
 
 show_collision_off_style = """
 QPushButton {
-    background-color: #FFE9A8;
+    background-color: #FFEBEE;
     color: black;
 
     border: 1px solid rgba(189, 189, 189, 0.5);
@@ -187,10 +188,10 @@ QPushButton {
     min-height: 20px;
 }
 QPushButton:hover {
-    background-color: #FFE082;
+    background-color: #EF9A9A;
 }
 QPushButton:pressed {
-    background-color: #FFE082;
+    background-color: #EF9A9A;
 }
 
 """
@@ -230,7 +231,7 @@ QSlider::handle:horizontal:disabled {
 
 joint_pos_label_style ="""
     QLabel {
-        border: 2px solid #BDBDBD;
+        border: 1px solid #BDBDBD;
         width: 70px;
         border-radius: 8px;
         padding: 8px 12px;

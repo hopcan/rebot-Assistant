@@ -100,6 +100,14 @@ def _rotation_axis(axis, angle):
     ])
 
 
+def _tint_colors(colors, factor=0.5):
+    """把顶点颜色向红色偏：压暗绿/蓝通道，保留亮度结构与 alpha（用于碰撞红晕）。"""
+    out = colors.copy()
+    out[:, 1] *= factor  # G
+    out[:, 2] *= factor  # B
+    return out
+
+
 # ═══════════════════════════════════════════════════════════════
 # URDF 连杆树
 # ═══════════════════════════════════════════════════════════════
@@ -111,6 +119,8 @@ class LinkNode:
         "vertices", "normals", "n_verts",
         "_vert_data", "_norm_data", "_vert_colors", "_col_data", "_visuals",
         "parent", "children", "is_fixed",
+        "mimic_link", "mimic_mult", "mimic_offset", "highlight",
+        "tint", "_tint_col_data", "_tint_key",
     )
 
     def __init__(self, name):
@@ -128,6 +138,13 @@ class LinkNode:
         self.n_verts = 0
         self.parent = None
         self.children = []
+        self.mimic_link = None
+        self.mimic_mult = 1.0
+        self.mimic_offset = 0.0
+        self.highlight = None
+        self.tint = None
+        self._tint_col_data = None
+        self._tint_key = None
 
 
 def parse_urdf(urdf_path: str) -> LinkNode:
@@ -136,7 +153,36 @@ def parse_urdf(urdf_path: str) -> LinkNode:
     urdf_dir = Path(urdf_path).parent
     pkg_dir = urdf_dir.parent
 
+    # 收集顶层命名材质定义（<material name="X"><color rgba=.../></material>）
+    materials = {}
+    for elem in robot:
+        if elem.tag == "material":
+            mname = elem.get("name")
+            col = elem.find("color")
+            if mname and col is not None:
+                materials[mname] = [float(v) for v in col.get("rgba", "0.7 0.7 0.7 1").split()]
+
+    def _material_color(mat_elem, default):
+        if mat_elem is None:
+            return default
+        col = mat_elem.find("color")
+        if col is not None:
+            return [float(v) for v in col.get("rgba", "0.7 0.7 0.7 1").split()]
+        mname = mat_elem.get("name")
+        if mname and mname in materials:
+            return materials[mname]
+        return default
+
     def _resolve_mesh(filename: str) -> str | None:
+        if filename and filename.startswith("package://"):
+            # package://<pkg>/<rest> → 取 "description" 之后的部分，相对本工程 description 目录解析
+            parts = filename.split("/", 2)[-1].split("/")
+            if "description" in parts:
+                sub = "/".join(parts[parts.index("description") + 1:])
+                p = pkg_dir / sub
+                if p.exists():
+                    return str(p)
+            return None
         for base in (urdf_dir, pkg_dir):
             p = base / filename
             if p.exists():
@@ -155,11 +201,7 @@ def parse_urdf(urdf_path: str) -> LinkNode:
                 links[name] = node
                 continue
             # 用第一个 visual 的颜色作为 link 默认色
-            first_mat = visuals[0].find("material")
-            if first_mat is not None:
-                col = first_mat.find("color")
-                if col is not None:
-                    node.color = [float(v) for v in col.get("rgba", "0.7 0.7 0.7 1").split()]
+            node.color = _material_color(visuals[0].find("material"), [0.7, 0.7, 0.7, 1.0])
             node._visuals = []  # 存储 (mesh_path, xyz, rpy, color)
             for vis in visuals:
                 xyz, rpy = _parse_origin(vis.find("origin"))
@@ -168,17 +210,20 @@ def parse_urdf(urdf_path: str) -> LinkNode:
                     mesh = geom.find("mesh")
                     if mesh is not None:
                         mp = _resolve_mesh(mesh.get("filename"))
-                        vis_color = node.color  # 默认用 link 颜色
-                        mat = vis.find("material")
-                        if mat is not None:
-                            col = mat.find("color")
-                            if col is not None:
-                                vis_color = [float(v) for v in col.get("rgba", "0.7 0.7 0.7 1").split()]
+                        vis_color = _material_color(vis.find("material"), node.color)
                         if mp:
                             node._visuals.append((mp, xyz, rpy, vis_color))
             links[name] = node
 
     # 处理 joint
+    # 先建立 joint 名 → 子连杆名 映射（用于 mimic 关节取值）
+    joint_to_link = {}
+    for elem in robot:
+        if elem.tag == "joint":
+            child = elem.find("child")
+            if child is not None:
+                joint_to_link[elem.get("name")] = child.get("link")
+
     for elem in robot:
         if elem.tag == "joint":
             parent = elem.find("parent")
@@ -203,6 +248,11 @@ def parse_urdf(urdf_path: str) -> LinkNode:
                             float(limit_elem.get("lower", -3.14)),
                             float(limit_elem.get("upper", 3.14)),
                         )
+                    mimic_elem = elem.find("mimic")
+                    if mimic_elem is not None:
+                        cn.mimic_link = joint_to_link.get(mimic_elem.get("joint"))
+                        cn.mimic_mult = float(mimic_elem.get("multiplier", "1"))
+                        cn.mimic_offset = float(mimic_elem.get("offset", "0"))
 
     # 建立 children
     for name, node in links.items():
@@ -263,18 +313,23 @@ def _collect_transforms(root: LinkNode, joint_angles: dict, T_parent=np.eye(4)):
     for child in root.children:
         if child.is_fixed:
             T_joint = np.eye(4)
-        elif child.joint_type == "prismatic":
-            # 滑动关节：沿 joint_axis 平移
-            slide = joint_angles.get(child.name, 0.0)
-            T_joint = np.eye(4)
-            ax = np.array(child.joint_axis, dtype=np.float64)
-            norm = np.linalg.norm(ax)
-            if norm > 1e-10:
-                T_joint[:3, 3] = (ax / norm) * slide
         else:
-            # 旋转关节
-            angle = joint_angles.get(child.name, 0.0)
-            T_joint = _rotation_axis(child.joint_axis, angle)
+            # 关节值：带 mimic 的关节用源关节值推导，否则取自身
+            if getattr(child, "mimic_link", None):
+                src = joint_angles.get(child.mimic_link, 0.0)
+                q = child.mimic_mult * src + child.mimic_offset
+            else:
+                q = joint_angles.get(child.name, 0.0)
+            if child.joint_type == "prismatic":
+                # 滑动关节：沿 joint_axis 平移
+                T_joint = np.eye(4)
+                ax = np.array(child.joint_axis, dtype=np.float64)
+                norm = np.linalg.norm(ax)
+                if norm > 1e-10:
+                    T_joint[:3, 3] = (ax / norm) * q
+            else:
+                # 旋转关节
+                T_joint = _rotation_axis(child.joint_axis, q)
         T_child = T_parent @ child.joint_origin @ T_joint
         transforms.update(_collect_transforms(child, joint_angles, T_child))
     return transforms
@@ -355,8 +410,9 @@ class GLURDFRenderer(QOpenGLWidget):
             self.joint_angles[self._joint_order[i]] = positions[i]
         self.update()
 
-    def set_link_color(self, link_name: str, rgba: tuple):
-        """设置单个连杆颜色 (r, g, b, a)，例 set_link_color('link1', (1, 0.3, 0, 1))"""
+    def set_link_color(self, link_name: str, rgba):
+        """设置/清除单个连杆高亮色。rgba 传 None 恢复自然色（多彩网格），否则覆盖为单色。
+        例 set_link_color('link1', (1, 0.3, 0, 1))"""
         def _find(node, name):
             if node.name == name: return node
             for c in node.children:
@@ -365,14 +421,39 @@ class GLURDFRenderer(QOpenGLWidget):
             return None
         node = _find(self.root, link_name)
         if node:
-            node.color = list(rgba)
-            node._col_data = None  # 清掉多 visual 的逐顶点色，用单色
+            node.highlight = tuple(rgba) if rgba is not None else None
             self.update()
 
     def set_link_colors(self, mapping: dict):
         """批量设置颜色，例 set_link_colors({'link1':(1,0,0,1), 'link2':(0,1,0,1), 'base_link':(0.5,0.5,0.5,1)})"""
         for name, rgba in mapping.items():
             self.set_link_color(name, rgba)
+
+    def set_link_tint(self, link_name: str, rgba):
+        """给连杆叠加一层偏红晕色，并保留原色层次。rgba 传 None 恢复自然色。
+        例 set_link_tint('link2', (1, 0, 0, 1))"""
+        def _find(node, name):
+            if node.name == name: return node
+            for c in node.children:
+                r = _find(c, name)
+                if r: return r
+            return None
+        node = _find(self.root, link_name)
+        if not node:
+            return
+        if rgba is None:
+            node.tint = None
+        else:
+            key = tuple(rgba)
+            node.tint = tuple(rgba)
+            if getattr(node, "_tint_key", None) != key:
+                base = getattr(node, "_vert_colors", None)
+                node._tint_col_data = (
+                    np.ascontiguousarray(_tint_colors(base), dtype=np.float32)
+                    if base is not None else None
+                )
+                node._tint_key = key
+        self.update()
 
     def clear_trail(self):
         """清除末端轨迹"""
@@ -432,16 +513,18 @@ class GLURDFRenderer(QOpenGLWidget):
 
     # ── OpenGL ──
     def initializeGL(self):
-        glClearColor(0.16, 0.17, 0.18, 1.0)
+        glClearColor(0.9, 0.9, 0.9, 1.0)
         glEnable(GL_DEPTH_TEST)
         glEnable(GL_LIGHTING)
         glEnable(GL_LIGHT0)
         glEnable(GL_COLOR_MATERIAL)
         glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE)
         glLightfv(GL_LIGHT0, GL_POSITION, self.light_pos)
-        glLightfv(GL_LIGHT0, GL_DIFFUSE, [0.9, 0.9, 0.9, 1.0])
-        glLightfv(GL_LIGHT0, GL_AMBIENT, [0.25, 0.25, 0.25, 1.0])
-        glLightModelfv(GL_LIGHT_MODEL_AMBIENT, [0.2, 0.2, 0.2, 1.0])
+        # 漫反射，主光强度
+        glLightfv(GL_LIGHT0, GL_DIFFUSE, [1.0, 1.0, 1.0, 1.0])
+        # 环境光
+        glLightfv(GL_LIGHT0, GL_AMBIENT, [0.55, 0.55, 0.55, 1.0])
+        glLightModelfv(GL_LIGHT_MODEL_AMBIENT, [0.1, 0.1, 0.1, 1.0])
         glShadeModel(GL_SMOOTH)
         glEnable(GL_NORMALIZE)
         glEnable(GL_BLEND)
@@ -515,7 +598,7 @@ class GLURDFRenderer(QOpenGLWidget):
 
     def _draw_ground(self):
         glDisable(GL_LIGHTING)
-        glColor4f(0.3, 0.3, 0.35, 0.5)
+        glColor4f(0.72, 0.72, 0.75, 0.6)
         glBegin(GL_LINES)
         for i in range(-10, 11):
             glVertex3f(i * 0.1, -1.0, 0)
@@ -582,15 +665,15 @@ class GLURDFRenderer(QOpenGLWidget):
         box_w, box_h = 220, 166
         x0, y0 = w - box_w - 12, 12
 
-        # 半透明底框
-        glColor4f(0.08, 0.09, 0.11, 0.78)
+        # 底框（背景色，白底）
+        glColor4f(1.0, 1.0, 1.0, 1.0)
         glBegin(GL_QUADS)
         glVertex2f(x0, y0); glVertex2f(x0 + box_w, y0)
         glVertex2f(x0 + box_w, y0 + box_h); glVertex2f(x0, y0 + box_h)
         glEnd()
 
         # 边框
-        glColor4f(0.45, 0.56, 0.75, 1.0)
+        glColor4f(0.52, 0.52, 0.52, 1.0)
         glLineWidth(1.5)
         glBegin(GL_LINE_LOOP)
         glVertex2f(x0, y0); glVertex2f(x0 + box_w, y0)
@@ -598,14 +681,14 @@ class GLURDFRenderer(QOpenGLWidget):
         glEnd()
 
         # 文字
-        self._draw_text(x0 + 10, y0 + 8,  "末端位姿 (end pose)", (0.75, 0.82, 0.92, 1.0), 13)
-        self._draw_text(x0 + 10, y0 + 34, "X:  %.4f m" % pos[0], (1.0, 0.72, 0.45, 1.0), 14)
-        self._draw_text(x0 + 10, y0 + 54, "Y:  %.4f m" % pos[1], (1.0, 0.72, 0.45, 1.0), 14)
-        self._draw_text(x0 + 10, y0 + 74, "Z:  %.4f m" % pos[2], (1.0, 0.72, 0.45, 1.0), 14)
+        self._draw_text(x0 + 10, y0 + 8,  "末端位姿 (end pose)", (0.25, 0.30, 0.42, 1.0), 13)
+        self._draw_text(x0 + 10, y0 + 34, "X:  %.4f m" % pos[0], (0.80, 0.42, 0.14, 1.0), 14)
+        self._draw_text(x0 + 10, y0 + 54, "Y:  %.4f m" % pos[1], (0.80, 0.42, 0.14, 1.0), 14)
+        self._draw_text(x0 + 10, y0 + 74, "Z:  %.4f m" % pos[2], (0.80, 0.42, 0.14, 1.0), 14)
         r, p, y = np.degrees(rpy)
-        self._draw_text(x0 + 10, y0 + 94,  "Roll:  %.1f°" % r, (0.45, 0.85, 0.72, 1.0), 14)
-        self._draw_text(x0 + 10, y0 + 114, "Pitch: %.1f°" % p, (0.45, 0.85, 0.72, 1.0), 14)
-        self._draw_text(x0 + 10, y0 + 134, "Yaw:   %.1f°" % y, (0.45, 0.85, 0.72, 1.0), 14)
+        self._draw_text(x0 + 10, y0 + 94,  "Roll:  %.1f°" % r, (0.10, 0.42, 0.33, 1.0), 14)
+        self._draw_text(x0 + 10, y0 + 114, "Pitch: %.1f°" % p, (0.10, 0.42, 0.33, 1.0), 14)
+        self._draw_text(x0 + 10, y0 + 134, "Yaw:   %.1f°" % y, (0.10, 0.42, 0.33, 1.0), 14)
 
         # 恢复 3D 状态
         glMatrixMode(GL_PROJECTION)
@@ -622,8 +705,8 @@ class GLURDFRenderer(QOpenGLWidget):
             cache = self._text_cache = {}
         key = (text, px)
         if key not in cache:
-            font = QFont("Microsoft YaHei", px)
-            font.setWeight(QFont.DemiBold)
+            font = QFont()               # 应用默认字体，和按钮一致
+            font.setPointSize(px)
             fm = QFontMetrics(font)
             img = QImage(fm.horizontalAdvance(text), fm.height() + 4, QImage.Format_ARGB32)
             img.fill(Qt.transparent)
@@ -667,16 +750,29 @@ class GLURDFRenderer(QOpenGLWidget):
             glVertexPointerf(node._vert_data)
             glNormalPointerf(node._norm_data)
 
-            if node._col_data is not None:
+            highlight = getattr(node, "highlight", None)
+            tint = getattr(node, "tint", None)
+
+            use_col_array = False
+            color_data = node._col_data
+            if tint is not None and node._tint_col_data is not None:
+                # 碰撞红晕：用叠加(偏红)后的顶点色，保留原色层次
+                use_col_array = True
+                color_data = node._tint_col_data
+            elif highlight is None:
+                use_col_array = node._col_data is not None
+
+            if use_col_array:
                 glEnableClientState(GL_COLOR_ARRAY)
-                glColorPointerf(node._col_data)
+                glColorPointerf(color_data)
+            elif highlight is not None:
+                glColor4f(*highlight)
             else:
-                r, g, b, a = node.color
-                glColor4f(r, g, b, a)
+                glColor4f(*node.color)
 
             glDrawArrays(GL_TRIANGLES, 0, node.n_verts)
 
-            if node._col_data is not None:
+            if use_col_array:
                 glDisableClientState(GL_COLOR_ARRAY)
 
             glPopMatrix()

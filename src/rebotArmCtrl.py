@@ -32,8 +32,13 @@ class ArmControlThread(QThread):
     error_occurred = pyqtSignal(str)  # 用于传递错误信息
     log_message = pyqtSignal(str)  # 用于传递日志信息
     connected = pyqtSignal(str)  # 用于通知连接成功
-    set_mode_signal = pyqtSignal(str)
-    set_zero_is_success =  pyqtSignal(bool)
+    set_mode_signal = pyqtSignal(str) # 用于传递模式设置
+    mode_info = pyqtSignal(str) # 用于传递当前模式额外信息
+
+    set_zero_is_success =  pyqtSignal(bool) # 用于传递设置零点是否成功
+    return_zero_pos_is_success =  pyqtSignal(bool) # 用于传递回到零位是否成功
+    move_end_to_pos_is_success =  pyqtSignal(bool) # 用于传递末端移动到指定位置是否成功
+
     wait_change_mode = pyqtSignal(bool)
     end_pose = pyqtSignal(list)  # 用于传递末端位姿信息
     def __init__(self, channel,rebot_ver):
@@ -56,6 +61,12 @@ class ArmControlThread(QThread):
 
         # 绑定信号和槽函数
         self.set_mode_signal.connect(self._on_set_mode)
+        self.mode_info.connect(self._on_mode_info)
+
+        # 模式参数
+        self.mode_detail_info = None
+        self.get_mode_info = False
+
         if self.rebot_ver == "rebot-B601-DM":
             self.model = pin.buildModelFromUrdf(rebotArm_DM_model_path)
         elif self.rebot_ver == "rebot-B601-RS":
@@ -105,27 +116,31 @@ class ArmControlThread(QThread):
                         self.mode = None
                         self.enable_change_mode = True
 
-                    if self.mode == "record_mode_on":
+                    if self.mode == "return_zero_pos_mode_on":
                         self.enable_change_mode = False
-
-                    elif self.mode == "record_mode_off":
-                        # self.handle.return_zero_position
+                        self.return_zero_pos_is_success.emit(handle.return_zero_position())
+                        self.mode = None
                         self.enable_change_mode = True
 
-
-                    if self.mode == "move_end_mode_on":
+                    if self.mode == "move_end_mode_on" and self.get_mode_info == True:
                         q_joints = [0]*7
-                        target_pos_point = [0.22 ,0.1, 0.3, 0, 0.67, 0]
+                        # target_pos_point = [0.22 ,0.1, 0.3, 0, 0.67, 0]
                         dt = 0.1
-                        T = 5
+                        x, y, z, pitch, roll, yaw, t = map(float, self.mode_detail_info.split())
+                        target_pos_point = [x, y, z, pitch, roll, yaw]
+
                         if self.is_generate_traj == False:
-                            self.log_message.emit("开始生成轨迹！")
+                            self.log_message.emit("开始生成轨迹。")
                             handle.reconnect(config_path=rebotDM_ik_file_path)
                             joints_pos = handle.return_joints_last_pos()
                             orginal_joints_pos = joints_pos[:6]
                             q_traj, q_num = pinocchio_handle.generate_traj(original_joints_pos = orginal_joints_pos,
-                            target_pos_point = target_pos_point,T = T,dt = dt,model = self.model, data = self.data,frame_id = None)
+                            target_pos_point = target_pos_point,T = t,dt = dt,model = self.model, data = self.data,frame_id = None)
                             self.is_generate_traj = True
+                            if q_num == None:
+                                self.log_message.emit("轨迹生成失败，可能接近奇异点，请重试。")
+                            else:
+                                self.log_message.emit(f"轨迹生成完毕，轨迹点数为：{q_num}。")
                         # 生成轨迹并且轨迹点数大于0，执行轨迹
                         if self.is_generate_traj == True and q_num:
                             if self.Num < q_num :
@@ -137,28 +152,33 @@ class ArmControlThread(QThread):
                                     time.sleep(0.02)
                                     self.Num += 1
                                 self.enable_change_mode = False
-                            else:
+                            else: # 结束执行轨迹
                                 target = q_traj[-1]
                                 q_joints[:6] = target
                                 settle_cnt = 0
                                 handle.move_to_joint_positions(positions = q_joints)
-                                while settle_cnt < 100:  # 最多等 100*0.02 = 2s
+                                while settle_cnt < 50:  # 最多等 100*0.02 = 2s
                                     now = handle.return_joints_last_pos()[:6]
                                     self.rebot_arm_joints_pos.emit(now) 
                                     err = max(abs(a - b) for a, b in zip(now, target))
                                     if err < 0.02:
-                                        print("末端位置已稳定")
+                                        self.move_end_to_pos_is_success.emit(True)
                                         break
                                     time.sleep(0.1)
                                     settle_cnt += 1
-                                print(f"q_joints pos:{q_traj[self.Num-1]}")
-                                print(f"joints pos:{handle.return_joints_last_pos()}")
                                 self.Num = 0
                                 self.mode = None
                                 self.enable_change_mode = True
                                 self.is_generate_traj = False
-                                print("轨迹执行完毕！")
-                                
+                                self.get_mode_info = False
+                                self.move_end_to_pos_is_success.emit(True)
+                        elif self.is_generate_traj == True and q_num == None:
+                            self.mode = None
+                            self.enable_change_mode = True
+                            self.is_generate_traj = False
+                            self.get_mode_info = False
+                            self.move_end_to_pos_is_success.emit(False)
+
                     time.sleep(0.002)
                     self.addt += 0.002
                     if(self.addt > 0.02):
@@ -180,6 +200,10 @@ class ArmControlThread(QThread):
         # print(self.enable_change_mode)
         # print(mode)
         # print(self.mode)
+
+    def _on_mode_info(self, info):
+        self.mode_detail_info = info
+        self.get_mode_info = True
 
     def stop(self):                 
         self._is_running = False    # 通知 while 循环退出

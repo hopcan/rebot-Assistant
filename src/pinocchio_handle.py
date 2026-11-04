@@ -20,7 +20,7 @@ def gravity_compensation_control(joints_pos,model,data,rebot_ver) :
     torque = data.g
     full_torques[:6] = torque[:6]
     if rebot_ver == "rebot-B601-DM":
-        full_torques[1] *= 1.3
+        full_torques[1] *= 0.9
         full_torques[2] *= 1.1
         full_torques[3] *= 2.65  
     elif rebot_ver == "rebot-B601-RS":
