@@ -125,7 +125,7 @@ class reBotArm_handle:
                     except Exception:
                         # read error, no this can id
                         self.log_handle.emit(f"[no respond] motor_can_id=0x{motor_can_id:02X}")
-                        return False
+                        
                     
                 elif self.arm_version=="rebotRS":
                     self.log_handle.emit(f"Checking ID 0x{motor_can_id:02X} ({len(found_motors)+1}/{len(self.expected_ids)})")
