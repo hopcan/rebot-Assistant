@@ -23,6 +23,9 @@ def resource_path(relative_path):
 
 rebotDM_ik_file_path = os.fspath(resource_path("config/rebotDM_ik.yaml"))
 rebotDM_gravity_file_path = os.fspath(resource_path("config/rebotDM_gravity.yaml"))
+rebotRS_ik_file_path = os.fspath(resource_path("config/rebotRS_ik.yaml"))
+rebotRS_gravity_file_path = os.fspath(resource_path("config/rebotRS_gravity.yaml"))
+
 
 rebotArm_DM_model_path = resource_path("urdf/reBot-B601_DM_fixend/urdf/reBot-DevArm_fixend.urdf")
 # rebotArm_DM_model_path = resource_path("urdf/reBot_B601_DM/urdf/reBot_B601_DM.urdf")
@@ -99,15 +102,17 @@ class ArmControlThread(QThread):
                 while self._is_running:
 
                     if self.mode == "gravity_mode_on":
-                        handle.reconnect(config_path=rebotDM_gravity_file_path)
+                        if self.rebot_ver == "rebot-B601-DM":
+                            handle.reconnect(config_path=rebotDM_gravity_file_path)
+                        elif self.rebot_ver  == "rebot-B601-RS":
+                            handle.reconnect(config_path=rebotRS_gravity_file_path)
                         joints_pos = handle.return_joints_last_pos()
-                        # joints_pos = handle.get_joints_state()
                         full_torques = pinocchio_handle.gravity_compensation_control(joints_pos ,self.model,self.data,self.rebot_ver)  
                         handle.move_to_joint_positions(positions = joints_pos,torque=full_torques)
                         self.enable_change_mode = False
                     elif self.mode == "gravity_mode_off":
                         self.handle.return_zero_position()
-                        time.sleep(1)
+                        time.sleep(2)
                         self.handle.move_to_joint_positions(positions = [0]*7)
                         self.mode = None
                         self.enable_change_mode = True
@@ -122,25 +127,33 @@ class ArmControlThread(QThread):
                     if self.mode == "return_zero_pos_mode_on":
                         self.enable_change_mode = False
                         self.return_zero_pos_is_success.emit(handle.return_zero_position())
-                        time.sleep(1)
+                        time.sleep(2)
                         handle.move_to_joint_positions(positions = [0]*7)
                         self.mode = None
                         self.enable_change_mode = True
 
                     if self.mode == "move_end_mode_on" and self.get_mode_info == True:
                         q_joints = [0]*7
-                        # target_pos_point = [0.22 ,0.1, 0.3, 0, 0.67, 0]
+                        # target_pos_point = [0.22 ,0.18, 0.34, 0, 0.6, 0]
                         dt = 0.1
-                        x, y, z, pitch, roll, yaw, t = map(float, self.mode_detail_info.split())
-                        target_pos_point = [x, y, z, pitch, roll, yaw]
+                        t = 5
+                        x, y, z, roll, pitch, yaw, t = map(float, self.mode_detail_info.split())
+                        target_pos_point = [x, y, z, roll, pitch, yaw]
 
                         if self.is_generate_traj == False:
                             self.log_message.emit("开始生成轨迹。")
-                            handle.reconnect(config_path=rebotDM_ik_file_path)
+                            if self.rebot_ver == "rebot-B601-DM":
+                                handle.reconnect(config_path=rebotDM_ik_file_path)
+                            elif self.rebot_ver == "rebot-B601-RS":
+                                handle.reconnect(config_path=rebotRS_ik_file_path)
                             joints_pos = handle.return_joints_last_pos()
-                            orginal_joints_pos = joints_pos[:6]
-                            q_traj, q_num = pinocchio_handle.generate_traj(original_joints_pos = orginal_joints_pos,
-                            target_pos_point = target_pos_point,T = t,dt = dt,model = self.model, data = self.data,frame_id = None)
+                            if self.rebot_ver == "rebot-B601-DM":
+                                original_joints_pos = joints_pos[:6]
+                            elif self.rebot_ver == "rebot-B601-RS":
+                                original_joints_pos = joints_pos[:7]
+                            q_traj, q_num = pinocchio_handle.generate_traj(original_joints_pos = original_joints_pos,
+                            target_pos_point = target_pos_point,T = t,dt = dt,
+                            model = self.model, data = self.data, rebot_ver = self.rebot_ver, frame_id = None)
                             self.is_generate_traj = True
                             if q_num == None:
                                 self.log_message.emit("轨迹生成失败，可能接近奇异点，请重试。")
@@ -153,7 +166,7 @@ class ArmControlThread(QThread):
                                 if self.Num < q_num:
                                     joints_pos = handle.return_joints_last_pos()
                                     full_torques = pinocchio_handle.gravity_compensation_control(joints_pos ,self.model,self.data,self.rebot_ver)  
-                                    handle.move_to_joint_positions(positions = q_joints,torque=full_torques)
+                                    handle.move_to_joint_positions(positions = q_joints, torque=full_torques)
                                     time.sleep(0.02)
                                     self.Num += 1
                                 self.enable_change_mode = False
@@ -186,13 +199,12 @@ class ArmControlThread(QThread):
 
                     time.sleep(0.002)
                     self.addt += 0.002
-                    if(self.addt > 0.02):
+                    if(self.addt >= 0.002):
                         self.addt = 0
                         pos = self.handle.return_joints_last_pos()
                         self.rebot_arm_joints_pos.emit(pos) 
                         self.wait_change_mode.emit(self.enable_change_mode) #向上层传递是否可以切换模式
                 self.connected.emit(f"断开连接")
-                self._is_running = False
         except Exception as e:
             self.error_occurred.emit(str(e))
 

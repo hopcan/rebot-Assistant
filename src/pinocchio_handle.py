@@ -32,9 +32,9 @@ def gravity_compensation_control(joints_pos,model,data,rebot_ver) :
         full_torques[2] *= 1.1
         full_torques[3] *= 2.65  
     elif rebot_ver == "rebot-B601-RS":
-        full_torques[1] *= 0.8
-        # full_torques[2] *= 0.9
-        full_torques[3] *= 2.5
+        full_torques[1] *= 1
+        full_torques[2] *= 1
+        full_torques[3] *= 2.3
 
     
     return full_torques.tolist()
@@ -152,19 +152,32 @@ def get_rebotArm_pos_limit(file_path):
         rebotArm_posmin[motor_can_id-1] = config['joints'][motor_can_id-1]['posmin']
     return rebotArm_posmax,rebotArm_posmin
 
-rebotArm_posmax,rebotArm_posmin = get_rebotArm_pos_limit(resource_path("config/rebotDM_ik.yaml"))    
+rebotArm_DM_posmax,rebotArm_DM_posmin = get_rebotArm_pos_limit(resource_path("config/rebotDM_ik.yaml"))    
+rebotArm_RS_posmax,rebotArm_RS_posmin = get_rebotArm_pos_limit(resource_path("config/rebotRS_ik.yaml"))    
 
-def q_clip (q):   
+def q_clip (q, rebot_ver="rebot-B601-DM"):   
     q_new = q
+    if rebot_ver == "rebot-B601-DM":
+        posmax = rebotArm_DM_posmax
+        posmin = rebotArm_DM_posmin
+    elif rebot_ver == "rebot-B601-RS":
+        posmax = rebotArm_RS_posmax
+        posmin = rebotArm_RS_posmin
+
     for motor_can_id in list(range(0, 6)):
-        if  q_new[motor_can_id] > rebotArm_posmax[motor_can_id] :
-            q_new[motor_can_id] = rebotArm_posmax[motor_can_id]
-        if  q_new[motor_can_id] < rebotArm_posmin[motor_can_id] :
-            q_new[motor_can_id] = rebotArm_posmin[motor_can_id]
+        if  q_new[motor_can_id] > posmax[motor_can_id] :
+            q_new[motor_can_id] = posmax[motor_can_id]
+        if  q_new[motor_can_id] < posmin[motor_can_id] :
+            q_new[motor_can_id] = posmin[motor_can_id]
     return q_new
 
-def clik_follow(traj, q0, model, data, frame_name="end_link", damp=1e-6, dt=1e-2):
-    q = np.array(q0, dtype=float)
+def clik_follow(traj, q0, model, data, frame_name="end_link", damp=1e-6, dt=1e-2,rebot_ver="rebot-B601-DM"):
+    if rebot_ver == "rebot-B601-DM":
+        q = np.array(q0, dtype=float)
+    elif rebot_ver == "rebot-B601-RS":
+        base = np.array(q0[:6], dtype=float)
+        gripper_joint = [q0[6]*0, q0[6]*0]
+        q = np.concatenate((base, gripper_joint))   
     q_hist = []
     q_hist_num = 0
     Max_iteration_nums = 500
@@ -197,13 +210,13 @@ def clik_follow(traj, q0, model, data, frame_name="end_link", damp=1e-6, dt=1e-2
             v = -J.T @ np.linalg.solve(JJT, err)
             
             # 流形更新
-            q = q_clip (q)
+            q[:6] = q_clip (q[:6], rebot_ver=rebot_ver)
             q = pin.integrate(model, q, v * dt)
 
             iteration_nums += 1
         if success == True:
             q_hist_num += 1
-            q_hist.append(q.tolist())
+            q_hist.append(q[:6].tolist())
         elif success == False:
             print("IK compute failed !")
             return None
@@ -211,14 +224,20 @@ def clik_follow(traj, q0, model, data, frame_name="end_link", damp=1e-6, dt=1e-2
 
 
 
-def generate_traj(original_joints_pos,target_pos_point,T,dt,model,data,frame_id = None):
+def generate_traj(original_joints_pos,target_pos_point,T,dt,model,data,rebot_ver="rebot-B601-DM",frame_id = None):
     if frame_id == None :
         frame_id = 7
 
     q0 = np.array(original_joints_pos)
     frame_name = ["base_link","link1","link2","link3","link4","link5","link6","end_link"]
     frame_id = model.getFrameId(frame_name[frame_id])
-    pin.forwardKinematics(model, data, q0)
+    if rebot_ver == "rebot-B601-DM":
+        now_joints = q0[:6]
+    elif rebot_ver == "rebot-B601-RS":
+        base = np.array(q0[:6], dtype=float)
+        gripper_joint = [q0[6]*0, q0[6]*0]
+        now_joints = np.concatenate((base, gripper_joint))  
+    pin.forwardKinematics(model, data, now_joints)
     pin.updateFramePlacements(model, data)
     oM0 = data.oMf[frame_id]
 
@@ -228,7 +247,7 @@ def generate_traj(original_joints_pos,target_pos_point,T,dt,model,data,frame_id 
     oM1 = pin.SE3(rot, target_pos)
 
     traj = cartesian_linear_trajectory(oM0, oM1, T=T, dt=dt)
-    result = clik_follow(traj, q0, model, data, damp=1e-6, dt=0.02)
+    result = clik_follow(traj, q0, model, data, rebot_ver=rebot_ver, damp=1e-6, dt=0.02)
     if result is None:
         print("Error: clik_follow returned None. IK may have failed.")
         return None, None

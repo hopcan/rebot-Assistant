@@ -1,0 +1,32 @@
+# ===== Python 编译产物 =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+
+# ===== 虚拟环境 =====
+venv/
+.venv/
+env/
+
+# ===== PyInstaller 打包产物（不上传编译结果）=====
+build/
+dist/
+*.exe
+
+# 若也不想共享打包脚本，取消下一行注释
+*.spec
+
+# ===== IDE / 操作系统 =====
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== 日志 / 临时文件 =====
+*.log

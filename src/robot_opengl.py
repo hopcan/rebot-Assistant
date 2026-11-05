@@ -646,8 +646,58 @@ class GLURDFRenderer(QOpenGLWidget):
         glEnable(GL_LIGHTING)
 
     def _draw_hud(self, pos, rpy):
-        """右上角半透明数据框，显示末端位置与姿态（屏幕空间，覆盖在 3D 场景之上）"""
+        """右上角半透明数据框：尺寸随窗口缩放；行距/宽度按字体实测，防止重叠或出界。"""
         w, h = self.width(), self.height()
+        if w < 8 or h < 8:
+            return
+
+        r, p, yaw = np.degrees(rpy)
+        title = "末端位姿 (end pose)"
+        rows = [
+            ("X:  %.4f m" % pos[0], (0.80, 0.42, 0.14, 1.0)),
+            ("Y:  %.4f m" % pos[1], (0.80, 0.42, 0.14, 1.0)),
+            ("Z:  %.4f m" % pos[2], (0.80, 0.42, 0.14, 1.0)),
+            ("Roll:  %.1f°" % r,   (0.10, 0.42, 0.33, 1.0)),
+            ("Pitch: %.1f°" % p,   (0.10, 0.42, 0.33, 1.0)),
+            ("Yaw:   %.1f°" % yaw, (0.10, 0.42, 0.33, 1.0)),
+        ]
+
+        def measure(scale):
+            """按缩放系数算出字号与框尺寸；行距用字体实测高度，保证贴图不叠。"""
+            px_t = max(6, int(round(13 * scale)))
+            px_v = max(6, int(round(14 * scale)))
+            f_t = QFont(); f_t.setPointSize(px_t); fm_t = QFontMetrics(f_t)
+            f_v = QFont(); f_v.setPointSize(px_v); fm_v = QFontMetrics(f_v)
+            gap = max(6, int(6 * scale))
+            line_h = fm_v.height() + gap
+            title_h = fm_t.height() + gap
+            pad_x, pad_y = 10 * scale, 8 * scale
+            content_w = max([fm_v.horizontalAdvance(t) for t, _ in rows]
+                            + [fm_t.horizontalAdvance(title)])
+            return dict(px_t=px_t, px_v=px_v, line_h=line_h, title_h=title_h,
+                        pad_x=pad_x, pad_y=pad_y,
+                        box_w=content_w + 2 * pad_x,
+                        box_h=pad_y + title_h + len(rows) * line_h + pad_y)
+
+        # ① 以 1200×1000 为基准随窗口等比缩放，限制在 [0.8, 1.6]
+        scale = max(0.8, min(1.6, min(w / 1200.0, h / 1000.0)))
+        L = measure(scale)
+        margin = 12 * scale
+
+        # ② 窗口装不下时再等比缩小，保证整框+边距一定放得下
+        fit = min(1.0,
+                  (w - 2 * margin) / max(L["box_w"], 1.0),
+                  (h - 2 * margin) / max(L["box_h"], 1.0))
+        if fit < 1.0:
+            scale *= fit
+            L = measure(scale)
+            margin = 12 * scale
+
+        box_w, box_h = L["box_w"], L["box_h"]
+        x0 = max(margin, w - box_w - margin)      # 右上角
+        y0 = margin
+        if y0 + box_h > h:                         # 高度不够时上移夹紧
+            y0 = max(margin, h - box_h - margin)
 
         # 切到屏幕空间：原点在左上角，y 向下
         glMatrixMode(GL_PROJECTION)
@@ -661,9 +711,6 @@ class GLURDFRenderer(QOpenGLWidget):
         glDisable(GL_DEPTH_TEST)
         glDisable(GL_LIGHTING)
         glEnable(GL_BLEND)
-
-        box_w, box_h = 220, 166
-        x0, y0 = w - box_w - 12, 12
 
         # 底框（背景色，白底）
         glColor4f(1.0, 1.0, 1.0, 1.0)
@@ -680,15 +727,13 @@ class GLURDFRenderer(QOpenGLWidget):
         glVertex2f(x0 + box_w, y0 + box_h); glVertex2f(x0, y0 + box_h)
         glEnd()
 
-        # 文字
-        self._draw_text(x0 + 10, y0 + 8,  "末端位姿 (end pose)", (0.25, 0.30, 0.42, 1.0), 13)
-        self._draw_text(x0 + 10, y0 + 34, "X:  %.4f m" % pos[0], (0.80, 0.42, 0.14, 1.0), 14)
-        self._draw_text(x0 + 10, y0 + 54, "Y:  %.4f m" % pos[1], (0.80, 0.42, 0.14, 1.0), 14)
-        self._draw_text(x0 + 10, y0 + 74, "Z:  %.4f m" % pos[2], (0.80, 0.42, 0.14, 1.0), 14)
-        r, p, y = np.degrees(rpy)
-        self._draw_text(x0 + 10, y0 + 94,  "Roll:  %.1f°" % r, (0.10, 0.42, 0.33, 1.0), 14)
-        self._draw_text(x0 + 10, y0 + 114, "Pitch: %.1f°" % p, (0.10, 0.42, 0.33, 1.0), 14)
-        self._draw_text(x0 + 10, y0 + 134, "Yaw:   %.1f°" % y, (0.10, 0.42, 0.33, 1.0), 14)
+        # 文字：逐行按实测行高排布，绝不重叠
+        ty = y0 + L["pad_y"]
+        self._draw_text(x0 + L["pad_x"], ty, title, (0.25, 0.30, 0.42, 1.0), L["px_t"])
+        ty += L["title_h"]
+        for text, color in rows:
+            self._draw_text(x0 + L["pad_x"], ty, text, color, L["px_v"])
+            ty += L["line_h"]
 
         # 恢复 3D 状态
         glMatrixMode(GL_PROJECTION)

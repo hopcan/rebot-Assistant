@@ -44,7 +44,9 @@ class rebot_Simulation_App(QMainWindow):
 
         # 设置窗口
         self.setWindowTitle("rebot Assistant")
-        self.setGeometry(100, 100, 800, 300)  # x, y, width, height
+        self.setGeometry(100, 100, 1200, 1000)  # x, y, width, height
+        self.setMinimumWidth(1000)   # 最小宽度 > 1000
+        self.setMinimumHeight(1000)   # 可选，最小高度
         # self.center_on_screen()
         self.setWindowIcon(QIcon(str(resource_path("ico/seeed_studio.ico"))))
         self.setStyleSheet(style.main_window_style)
@@ -163,7 +165,7 @@ class rebot_Simulation_App(QMainWindow):
         self.top_layout.addWidget(self.expect_end_pos_label)
 
         self.expect_end_pos_edit = QLineEdit()
-        self.expect_end_pos_edit.setPlaceholderText("格式:x y z pitch roll yaw time")
+        self.expect_end_pos_edit.setPlaceholderText("格式:x y z roll pitch yaw time")
         self.expect_end_pos_edit.setClearButtonEnabled(True)
         self.expect_end_pos_edit.setMaximumWidth(500)
         self.expect_end_pos_edit.setMinimumWidth(190)   # 至少 300px，还能随窗口变宽
@@ -247,7 +249,7 @@ class rebot_Simulation_App(QMainWindow):
             self.slider_min = [-2.6,0,0, -1.56,-1.56,-3.14,-5.67]
             self.slider_max = [2.6,3.8,3.8, 1.56,1.56,3.14,0 ]
             self.robot_id_map = {-1:"base_link", 0:"link1",1:"link2",2:"link3",3:"link4",
-                            4:"link5",5:"link6",6:"end_link",7:"gripper_left",8:"gripper_right"}
+                            4:"link5",5:"link6",6:"gripper_end",7:"gripper_left",8:"gripper_right"}
         for i in range(7):
             # 每一行都是水平布局
             row = QHBoxLayout()
@@ -445,6 +447,7 @@ class rebot_Simulation_App(QMainWindow):
             maxVelocity=100.0,
             force=500                          # 最大力矩
         )
+        # time.sleep(0.5)
         self.show_rebot.clear_trail()
         
             
@@ -494,8 +497,8 @@ class rebot_Simulation_App(QMainWindow):
             parts = raw.split()                 # 按任意空白拆分，自动处理多空格
             if len(parts) != 7:
                 raise ValueError(f"需要 7 个数值，实际 {len(parts)} 个")
-            x, y, z, pitch, roll, yaw, time = map(float, parts)
-            return x, y, z, pitch, roll, yaw, time
+            x, y, z, roll, pitch, yaw, time = map(float, parts)
+            return x, y, z, roll, pitch, yaw, time
         except ValueError as e:
             # 格式错误，提示用户
             self.log_area.append(f"格式错误: {e}")
@@ -545,7 +548,7 @@ class rebot_Simulation_App(QMainWindow):
                 if time <= 0:
                     self.log_area.append("执行时间必须大于零，请检查输入。")
                     return
-                self.log_area.append(f"末端期望位姿: (x:{x}m, y:{y}m, z:{z}m, pitch:{pitch}rad, roll:{roll}rad, yaw:{yaw}rad), time:{time}s")
+                self.log_area.append(f"末端期望位姿: (x:{x}m, y:{y}m, z:{z}m, roll:{roll}rad, pitch:{pitch}rad, yaw:{yaw}rad), time:{time}s")
                 self.arm_thread.set_mode_signal.emit(f"move_end_mode_on")
                 self.arm_thread.mode_info.emit(" ".join(str(v) for v in result))
                 
@@ -995,7 +998,8 @@ if __name__ == "__main__":
     elif rebot_ver == "rebot-B601-RS":
         motor_ver = "RS"
         urdf = resource_path("urdf/00-arm-rs_asm-v3/urdf/00-arm-rs_asm-v3.urdf")
-        render_urdf = urdf
+        # 只换渲染：渲染用带颜色的 URDF，物理仿真仍用上面的 urdf
+        render_urdf = resource_path("description/rebotRS/urdf/ReBot_Arm_RS.urdf")
     window = rebot_Simulation_App()
     # splash.close()
     window.show()

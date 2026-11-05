@@ -535,7 +535,7 @@
       velocity="40" />
   </joint>
   <link
-    name="gripper_end">
+    name="end_link">
     <inertial>
       <origin
         xyz="-0.112751692515958 0.000128443070436966 -5.72602449749882E-06"
@@ -609,7 +609,7 @@
     <parent
       link="link6" />
     <child
-      link="gripper_end" />
+      link="end_link" />
     <axis
       xyz="0 0 0" />
   </joint>
@@ -680,7 +680,7 @@
       xyz="-0.041939 -7.3385E-05 0"
       rpy="1.5708 -1.5708 0" />
     <parent
-      link="gripper_end" />
+      link="end_link" />
     <child
       link="gripper_left" />
     <axis
@@ -758,7 +758,7 @@
       xyz="-0.041939 7.3385E-05 0"
       rpy="-1.5708 -1.5708 0" />
     <parent
-      link="gripper_end" />
+      link="end_link" />
     <child
       link="gripper_right" />
     <axis
