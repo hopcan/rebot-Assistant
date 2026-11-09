@@ -32,10 +32,10 @@ def gravity_compensation_control(joints_pos,model,data,rebot_ver) :
         full_torques[2] *= 1.1
         full_torques[3] *= 2.65  
     elif rebot_ver == "rebot-B601-RS":
-        full_torques[1] *= 1
-        full_torques[2] *= 1
+        full_torques[1] *= 0.8
+        full_torques[2] *= 0.9 #1
         full_torques[3] *= 2.3
-
+        print("full_torques:",full_torques)
     
     return full_torques.tolist()
 

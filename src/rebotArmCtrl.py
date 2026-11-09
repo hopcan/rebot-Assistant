@@ -29,7 +29,7 @@ rebotRS_gravity_file_path = os.fspath(resource_path("config/rebotRS_gravity.yaml
 
 rebotArm_DM_model_path = resource_path("urdf/reBot-B601_DM_fixend/urdf/reBot-DevArm_fixend.urdf")
 # rebotArm_DM_model_path = resource_path("urdf/reBot_B601_DM/urdf/reBot_B601_DM.urdf")
-rebotArm_RS_model_path = resource_path("urdf/reBot-B601_RS_fixend/urdf/00-arm-rs_asm-v3.urdf")
+rebotArm_RS_model_path = resource_path("urdf/reBot-B601_RS_fixend/urdf/00-arm-rs_asm-v3_recomputed.urdf")
 
 class ArmControlThread(QThread):
     rebot_arm_joints_pos = pyqtSignal(list) 
